@@ -1,0 +1,30 @@
+# -----------------
+# Node.js
+# -----------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+/dist
+/.env
+/.env.local
+/.env.*.local
+
+# -----------------
+# Rust
+# -----------------
+target/
+**/*.rs.bk
+**/*.rs.old
+
+# -----------------
+# General
+# -----------------
+.vscode/
+.DS_Store
+Thumbs.db
+*.log

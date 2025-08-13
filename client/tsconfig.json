@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "esnext",             // Modern JS target
+    "module": "esnext",           // or "esnext" depending on your setup
+    "outDir": "../public",             // compiled JS output directory
+    "rootDir": ".",             // source TS files location
+    "strict": true,                 // enable all strict type-checking options
+    "esModuleInterop": true,        // for default import compatibility
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "exclude": ["node_modules", "dist"]
+}

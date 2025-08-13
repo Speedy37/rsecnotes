@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Encrypt notes & files - AES-256-GCM (client-side)</title>
+		<style>
+			:root {
+				--bg-color: #ffffff;
+				--text-color: #1a1a1a;
+				--primary: #2563eb; /* Blue 600 */
+				--secondary: #7c3aed; /* Violet 600 */
+				--accent: #f97316; /* Orange 500 */
+				--border-color: #d1d5db;
+				--muted-text: #6b7280;
+			}
+
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg-color: #1b1b1b;
+					--bg2-color: #313131;
+					--text-color: #f3f4f6;
+					--focus-border-color: #007bff;
+					--focus-bg-color: #60a5fa;
+					--primary-green: #00d061;
+					--primary-blue: #60a5fa;
+					--secondary: #a78bfa; /* Violet 400 */
+					--accent: #35cb32; /* Orange 400 */
+					--border-color: #fff;
+					--drop-color: #bbb;
+					--muted-text: #9ca3af;
+				}
+			}
+
+			body {
+				font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+				background-color: var(--bg-color);
+				color: var(--text-color);
+				margin: 20px auto;
+				max-width: 900px;
+				display: grid;
+			}
+			.error {
+				background: #d43407 !important;
+			}
+			.progress {
+				--progress: 0%;
+				background: linear-gradient(
+					to right,
+					var(--primary-green) var(--progress),
+					var(--bg2-color) var(--progress)
+				) !important;
+			}
+
+			button,
+			textarea,
+			input,
+			.drop,
+			.list {
+				background: var(--bg2-color);
+				border: 1px solid var(--border-color);
+				color: var(--text-color);
+				margin: 0.25rem;
+				padding: 0.5rem 1rem;
+				border-radius: 0.25rem;
+				outline: none;
+				transition: all 0.2s ease;
+				font-size: 1.25rem;
+			}
+			textarea {
+				min-height: 200px;
+				font-family: monospace;
+			}
+			textarea:focus-visible,
+			input:focus-visible {
+				border: 1px solid var(--focus-border-color);
+			}
+
+			button {
+				background: var(--bg2-color);
+				border: 1px solid var(--border-color);
+				color: var(--text-color);
+				margin: 0.25rem;
+				padding: 0.5rem 1rem;
+				border-radius: 0.25rem;
+				cursor: pointer;
+			}
+			button:hover {
+				background: var(--primary-blue);
+			}
+			button:disabled {
+				cursor: default;
+				background: var(--bg2-color);
+			}
+
+			label,
+			#input_settings > input {
+				margin-top: 1rem;
+				margin-bottom: 0.25rem;
+			}
+			label {
+				font-size: 1.25rem;
+				font-weight: 700;
+			}
+			label > span {
+				display: block;
+				font-weight: normal;
+				font-size: 0.9rem;
+			}
+
+			.list {
+				display: grid;
+				grid-template-columns: 1fr auto auto;
+			}
+			.list > div > span,
+			.list > button {
+				font-size: 0.9rem;
+				justify-self: center;
+			}
+			.list > * {
+				align-content: center;
+			}
+			.drop {
+				border: 2px dashed var(--drop-color);
+				text-align: center;
+				cursor: pointer;
+			}
+			.drop.dragover {
+				border-color: var(--primary-blue);
+			}
+
+			#input_settings {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+			}
+			#input_block,
+			#link_block,
+			#consume_block,
+			#read_block {
+				display: grid;
+			}
+
+			#link_qrcode > img {
+				padding: 10px;
+				background-color: white;
+				margin: 2rem auto;
+				border-radius: 0.25rem;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Encrypt text + files (client-side) — AES-256-GCM</h1>
+		<p class="small">
+			Type text and drop files (or use file picker). Clicking
+			<strong>Create</strong> will create a single encrypted note.
+		</p>
+		<div id="input_block">
+			<label for="input_note">Text</label>
+			<textarea
+				id="input_note"
+				placeholder="Write your note here..."
+				autocomplete="off"
+			></textarea>
+
+			<label>Files</label>
+			<div id="input_filedrop" class="drop">
+				Drop files here or click to choose
+				<input id="input_file" type="file" multiple style="display: none" />
+			</div>
+			<div class="list" id="input_filelist">No files selected.</div>
+
+			<div id="input_settings">
+				<label for="input_remaining_views"
+					>Max views<span>(0 or empty for no limits)</span></label
+				>
+				<input
+					id="input_remaining_views"
+					value="1"
+					min="0"
+					type="number"
+					autocomplete="off"
+				/>
+				<label for="input_expires_after"
+					>Minutes<span>(0 or empty for no limits)</span></label
+				>
+				<input id="input_expires_after" value="" min="0" type="number" autocomplete="off" />
+			</div>
+
+			<button id="input_createbtn" disabled>Create</button>
+			<div id="input_status"></div>
+			<div id="input_settings_status"></div>
+		</div>
+		<div id="link_block" style="display: none">
+			<label for="link_url">Share link</label>
+			<input id="link_url" type="text" readonly />
+			<button id="link_copy">Copy to clipboard</button>
+
+			<label>QR Code</label>
+			<div id="link_qrcode"></div>
+		</div>
+
+		<div id="consume_block" style="display: none">
+			<p>click below to show and delete the note if the counter has reached its limit</p>
+			<button id="consume_btn">Show note</button>
+		</div>
+		<div id="read_block" style="display: none">
+			<label for="read_note">Note / Text</label>
+			<textarea id="read_note" readonly></textarea>
+			<button id="read_copy">Copy to clipboard</button>
+
+			<label>Files</label>
+			<div class="list" id="read_filelist">No files included.</div>
+
+			<p id="read_settings_status"></p>
+		</div>
+		<button id="btn_newnote" style="display: none">New note</button>
+		<script src="qrcode.js"></script>
+		<script src="index.js"></script>
+	</body>
+</html>
