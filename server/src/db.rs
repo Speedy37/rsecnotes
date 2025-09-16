@@ -6,12 +6,11 @@ use std::time::{Duration, Instant};
 use axum::body::Bytes;
 use base64::Engine;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NoteId {
-    /// Unique non guessable id (128bits)
-    pub id: [u8; 16],
+    /// Unique non guessable id (256bits)
+    pub id: [u8; 32],
 }
 
 impl FromStr for NoteId {
@@ -34,35 +33,6 @@ impl FromStr for NoteId {
 impl ToString for NoteId {
     fn to_string(&self) -> String {
         base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&self.id)
-    }
-}
-
-impl<'de> Deserialize<'de> for NoteId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        base64::prelude::BASE64_STANDARD
-            .decode(s)
-            .map_err(serde::de::Error::custom)
-            .and_then(|vec| {
-                Ok(NoteId {
-                    id: vec
-                        .try_into()
-                        .map_err(|_| serde::de::Error::custom("bad size"))?,
-                })
-            })
-    }
-}
-
-impl Serialize for NoteId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let encoded = base64::prelude::BASE64_STANDARD.encode(&self.id[..]);
-        serializer.serialize_str(&encoded)
     }
 }
 
@@ -109,7 +79,7 @@ struct NoteCreatedAt(Instant);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct NoteExpireAt(Instant);
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Database {
     notes_by_id: HashMap<NoteId, (NoteCreatedAt, NoteContent)>,
     /// Notes (created_at, instant) sorted by created_at order
@@ -118,11 +88,20 @@ pub struct Database {
     expiring_notes: BTreeMap<NoteExpireAt, NoteId>,
     /// Sum of notes sizes (ie. memory usage)
     memory_usage: usize,
-    pub max_memory_usage: usize,
-    pub max_note_size: usize,
+    max_memory_usage: usize,
 }
 
 impl Database {
+    pub fn new(max_memory_usage: usize) -> Self {
+        Self {
+            notes_by_id: Default::default(),
+            notes: Default::default(),
+            expiring_notes: Default::default(),
+            memory_usage: 0,
+            max_memory_usage,
+        }
+    }
+
     const fn note_memory_usage(content: &NoteContent) -> usize {
         const NOTE_BASE_MEMORY_USAGE: usize = size_of::<NoteId>() * 3
             + size_of::<NoteCreatedAt>() * 2

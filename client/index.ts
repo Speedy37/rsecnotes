@@ -337,6 +337,7 @@ function humanReadableSecs(secs: number) {
 //# UI
 const input_block = document.getElementById("input_block") as HTMLDivElement;
 const input_note = document.getElementById("input_note") as HTMLTextAreaElement;
+const input_files = document.getElementById("input_files") as HTMLDivElement;
 const input_filedrop = document.getElementById("input_filedrop") as HTMLDivElement;
 const input_file = document.getElementById("input_file") as HTMLInputElement;
 const input_filelist = document.getElementById("input_filelist") as HTMLDivElement;
@@ -408,7 +409,9 @@ input_createbtn.addEventListener("click", async () => {
 const pkg = new Pkg();
 function addFiles(files: FileList | null | undefined) {
 	if (!files) return;
-	for (const file of files) pkg.addFile(file);
+	for (const file of files) {
+		if (pkg.files.length < server_config.max_files) pkg.addFile(file);
+	}
 	renderFiles();
 	renderNoteStatus();
 }
@@ -440,8 +443,14 @@ function renderNoteStatus() {
 		input_createbtn.disabled = true;
 		return;
 	}
-	input_createbtn.disabled = false;
-	input_status.textContent = `Note size: ${humanSize(pkg.total_len)} / ?? MB.`;
+	const doesnt_fit = pkg.total_len > server_config.max_note_size;
+	input_createbtn.disabled = doesnt_fit;
+	const total_len_h = humanSize(pkg.total_len);
+	const max_note_size_h = humanSize(server_config.max_note_size);
+	input_status.textContent = `Note size: ${total_len_h} / ${max_note_size_h}.`;
+	if (doesnt_fit)
+		input_status.textContent += ` Too big, remove some contents.`
+	input_status.className = doesnt_fit ? "error" : "";
 	let remaining_views = +input_remaining_views.value;
 	let expires_after = +input_expires_after.value * 60;
 	if (!Number.isSafeInteger(remaining_views)) remaining_views = 1;
@@ -600,11 +609,34 @@ btn_newnote.addEventListener("click", () => {
 	document.location = url.href;
 });
 
+let server_config = {
+	/// Maximum final size of a note (after encryption and packaging)
+	max_note_size: 0,
+	/// Maximum number of files, 0 means no file allowed
+	max_files: 0,
+	/// Number of seconds before this note is removed, 0 for never
+	default_expires_after: 0,
+	/// Number of views before this note is removed, 0 for never
+	default_remaining_views: 0,
+};
 async function main() {
 	const page_url = new URL(document.location.href);
 	const note_id = page_url.searchParams.get("note");
 	const keyb64 = page_url.hash.substring(1);
-	if (!note_id || !keyb64) return;
+	if (!note_id || !keyb64) {
+		let res = await fetch("./config");
+		server_config = await res.json();
+		input_remaining_views.value = server_config.default_remaining_views
+			? server_config.default_remaining_views.toString()
+			: "";
+		input_expires_after.value = server_config.default_expires_after
+			? server_config.default_expires_after.toString()
+			: "";
+		if (server_config.max_files === 0) {
+			input_files.style.display = "none";
+		}
+		return;
+	}
 	showBlock("consume_block");
 	consume_btn.onclick = async () => {
 		try {

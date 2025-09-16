@@ -3,16 +3,27 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width,initial-scale=1" />
-		<title>Encrypt notes & files - AES-256-GCM (client-side)</title>
+		<title>rsecnotes - Send encrypted notes or files</title>
 		<style>
+			@font-face {
+				font-family: "Alfa Slab One";
+				src: url("data:font/woff2;charset=utf-8;base64,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")
+					format("woff2"); /* limited to rsecnotes chars*/
+				font-weight: normal;
+				font-style: normal;
+				font-display: swap;
+			}
+
 			:root {
-				--bg-color: #ffffff;
+				--bg-color: #fff;
+				--bg2-color: #eee;
 				--text-color: #1a1a1a;
-				--primary: #2563eb; /* Blue 600 */
-				--secondary: #7c3aed; /* Violet 600 */
-				--accent: #f97316; /* Orange 500 */
-				--border-color: #d1d5db;
-				--muted-text: #6b7280;
+				--focus-border-color: #007bff;
+				--focus-bg-color: #60a5fa;
+				--primary-green: #00d061;
+				--primary-blue: #60a5fa;
+				--border-color: #999;
+				--drop-color: #bbb;
 			}
 
 			@media (prefers-color-scheme: dark) {
@@ -24,11 +35,8 @@
 					--focus-bg-color: #60a5fa;
 					--primary-green: #00d061;
 					--primary-blue: #60a5fa;
-					--secondary: #a78bfa; /* Violet 400 */
-					--accent: #35cb32; /* Orange 400 */
 					--border-color: #fff;
 					--drop-color: #bbb;
-					--muted-text: #9ca3af;
 				}
 			}
 
@@ -40,8 +48,43 @@
 				max-width: 900px;
 				display: grid;
 			}
-			.error {
+			#rsecnotes {
+				font-family: "Alfa Slab One", serif;
+				font-size: 3em;
+				font-weight: 400;
+				font-style: normal;
+				margin-bottom: 0;
+				color: var(--text-color);
+				text-decoration: none;
+			}
+			#rsecnotes:hover > span {
+				text-decoration: underline;
+			}
+			#rsecnotes > .y {
+				margin-left: 0.25rem;
+				color: #ffc832;
+			}
+			#rsecnotes > .b {
+				margin-left: 0.25rem;
+				color: #083bb5;
+			}
+			h2 {
+				margin-top: -35px;
+				font-family: monospace;
+			}
+			h2 > span {
+				cursor: help;
+				text-decoration-line: underline;
+				text-decoration-style: dashed; /* dotted | double | wavy also work */
+				text-decoration-thickness: 1px; /* optional */
+				text-underline-offset: 2px; /* move it away from the text a bit */
+				text-decoration-skip-ink: auto; /* nicer around glyphs */
+			}
+			button.error {
 				background: #d43407 !important;
+			}
+			div.error {
+				color: #d43407 !important;
 			}
 			.progress {
 				--progress: 0%;
@@ -64,7 +107,7 @@
 				padding: 0.5rem 1rem;
 				border-radius: 0.25rem;
 				outline: none;
-				transition: all 0.2s ease;
+				transition: border, background-color 0.2s ease;
 				font-size: 1.25rem;
 			}
 			textarea {
@@ -136,7 +179,8 @@
 			#input_block,
 			#link_block,
 			#consume_block,
-			#read_block {
+			#read_block,
+			#input_files {
 				display: grid;
 			}
 
@@ -144,16 +188,26 @@
 				padding: 10px;
 				background-color: white;
 				margin: 2rem auto;
-				border-radius: 0.25rem;
+				border-radius: 0.5rem;
+				border: 1px solid var(--border-color);
 			}
+			.multi-link {
+  text-decoration: none; /* remove default underline */
+}
 		</style>
 	</head>
 	<body>
-		<h1>Encrypt text + files (client-side) — AES-256-GCM</h1>
-		<p class="small">
-			Type text and drop files (or use file picker). Clicking
-			<strong>Create</strong> will create a single encrypted note.
-		</p>
+		<h1>
+			<a id="rsecnotes" href=""><span>r</span><span class="y">sec</span><span class="b">notes</span></a>
+		</h1>
+		<h2>
+			Send
+			<span
+				title="Encryption is done client side with AES-256-GCM and the encryption key is never sent to the server."
+				>encrypted</span
+			>
+			notes or files.
+		</h2>
 		<div id="input_block">
 			<label for="input_note">Text</label>
 			<textarea
@@ -162,12 +216,14 @@
 				autocomplete="off"
 			></textarea>
 
-			<label>Files</label>
-			<div id="input_filedrop" class="drop">
-				Drop files here or click to choose
-				<input id="input_file" type="file" multiple style="display: none" />
+			<div id="input_files">
+				<label>Files</label>
+				<div id="input_filedrop" class="drop">
+					Drop files here or click to choose
+					<input id="input_file" type="file" multiple style="display: none" />
+				</div>
+				<div class="list" id="input_filelist">No files selected.</div>
 			</div>
-			<div class="list" id="input_filelist">No files selected.</div>
 
 			<div id="input_settings">
 				<label for="input_remaining_views"

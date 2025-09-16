@@ -1,41 +1,67 @@
 use axum::{
-    Router,
+    Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
 };
+use serde::Serialize;
+use std::{
+    sync::{Arc, Mutex},
+    u32,
+};
 use tower_http::services::ServeDir;
-use std::sync::{Arc, Mutex};
 
 mod db;
 use db::*;
 
-const MB: usize = 1024 * 1024;
+const MB: u32 = 1024 * 1024;
+
+#[derive(Debug, Serialize, Clone, Copy)]
+pub struct PublicConfig {
+    /// Maximum final size of a note (after encryption and packaging)
+    pub max_note_size: u32,
+    /// Maximum number of files, 0 means no file allowed
+    pub max_files: u32,
+    /// Number of seconds before this note is removed, 0 for never
+    pub default_expires_after: u32,
+    /// Number of views before this note is removed, 0 for never
+    pub default_remaining_views: u32,
+}
+
+struct AppState {
+    config: PublicConfig,
+    db: Mutex<Database>,
+}
 
 #[tokio::main]
 async fn main() {
     let max_note_size_in_mb = 1000;
-    let max_memory_usage_in_mb = 2000;
-    let mut db = Database::default();
-    db.max_note_size = max_note_size_in_mb * MB;
-    db.max_memory_usage = max_memory_usage_in_mb * MB;
-    let db = Arc::new(Mutex::new(db));
+    let max_memory_usage = 2000 * (MB as usize);
+
+    let config = PublicConfig {
+        max_note_size: max_note_size_in_mb * MB,
+        max_files: u32::MAX,
+        default_expires_after: 0,
+        default_remaining_views: 1,
+    };
+    let db = Mutex::new(Database::new(max_memory_usage));
+    let appstate = Arc::new(AppState { config, db });
 
     let static_files = ServeDir::new("D:/Dev/Perso/rsecnotes/public");
     let app = Router::new()
         .fallback_service(static_files)
-        .route("/config", post(add_note))
-        .route("/notes", post(add_note))
-        .route("/notes/{note_id}", get(read_note))
-        .layer(DefaultBodyLimit::max(max_note_size_in_mb * MB))
-        .with_state(db);
+        .route("/config", get(handler_config))
+        .route("/notes", post(handler_add_note))
+        .route("/notes/{note_id}", get(handler_read_note))
+        .layer(DefaultBodyLimit::max(max_memory_usage))
+        .with_state(appstate);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("Listening on http://{}", listener.local_addr().unwrap());
     println!("max_note_size = {} MB", max_note_size_in_mb);
-    println!("max_memory_usage = {} MB", max_memory_usage_in_mb);
+    println!("max_memory_usage = {} MB", max_memory_usage / (MB as usize));
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -46,8 +72,12 @@ fn into_bad_request(e: impl ToString) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, e.to_string())
 }
 
-async fn add_note(
-    State(db): State<Arc<Mutex<Database>>>,
+async fn handler_config(State(appstate): State<Arc<AppState>>) -> Json<PublicConfig> {
+    Json(appstate.config)
+}
+
+async fn handler_add_note(
+    State(appstate): State<Arc<AppState>>,
     headers: HeaderMap,
     data: Bytes,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -62,7 +92,7 @@ async fn add_note(
         })
     }
 
-    let mut db = db.lock().unwrap();
+    let mut db = appstate.db.lock().unwrap();
     let expires_after = header_to_u32(headers.get(X_EXPIRES_AFTER))?;
     let remaining_views = header_to_u32(headers.get(X_REMAINING_VIEWS))?;
     let content = NoteContent {
@@ -74,8 +104,8 @@ async fn add_note(
     Ok(note_id.to_string())
 }
 
-async fn read_note(
-    State(db): State<Arc<Mutex<Database>>>,
+async fn handler_read_note(
+    State(appstate): State<Arc<AppState>>,
     Path(note_id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     fn header_value(v: Option<u32>) -> String {
@@ -84,7 +114,7 @@ async fn read_note(
             None => "-1".to_string(),
         }
     }
-    let mut db = db.lock().unwrap();
+    let mut db = appstate.db.lock().unwrap();
     let note_id: NoteId = note_id.parse().map_err(into_bad_request)?;
     match db.read_note(note_id) {
         Some(content) => Ok((
