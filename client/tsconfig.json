@@ -1,16 +1,29 @@
 {
-  "compilerOptions": {
-    "target": "esnext",             // Modern JS target
-    "module": "esnext",           // or "esnext" depending on your setup
-    "outDir": "../public",             // compiled JS output directory
-    "rootDir": ".",             // source TS files location
-    "strict": true,                 // enable all strict type-checking options
-    "esModuleInterop": true,        // for default import compatibility
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "exclude": ["node_modules", "dist"]
+	"compilerOptions": {
+		"target": "esnext", // Modern JS target
+		"module": "amd", // or "esnext" depending on your setup
+		"outFile": "../public/index.js", // compiled JS output directory
+		"rootDir": ".", // source TS files location
+		"strict": true, // enable all strict type-checking options
+		"esModuleInterop": true, // for default import compatibility
+		"forceConsistentCasingInFileNames": true,
+		"skipLibCheck": true,
+		"noImplicitAny": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"jsx": "react",
+		"jsxFactory": "h",
+		"jsxFragmentFactory": "Fragment",
+		"allowJs": true
+	},
+	"files": [
+		"00_types.d.ts",
+		"01_qrcode.js",
+		"02_lib.ts",
+		"03_i18n.tsx",
+		"04_pkg.ts",
+		"05_api.ts",
+		"index.tsx"
+	],
+	"exclude": ["node_modules", "dist"]
 }

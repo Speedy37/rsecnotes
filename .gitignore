@@ -13,6 +13,7 @@ yarn.lock
 /.env
 /.env.local
 /.env.*.local
+/public/index.js
 
 # -----------------
 # Rust
