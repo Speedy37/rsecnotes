@@ -384,6 +384,7 @@ const btn_newnote = <button id="btn_newnote" style="display: none;" onclick={() 
 	url.hash = "";
 	document.location = url.href;
 }}>{tr(i18n.New_note)}</button>;
+document.title = tr(i18n.title);
 document.body.append(
 	tr(i18n.slogan_jsx)(),
 	(main_jsx = <div>{tr(i18n.Loading)}</div>),

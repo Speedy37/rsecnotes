@@ -76,8 +76,16 @@ class Pkg {
 		const data_dv = new DataView(buffer);
 		let pos = 0;
 		const write_u32le = (v: number) => {
+			if (v > 0xFFFF_FFFF)
+				throw new Error(`cannot safely encode to u32le, ${v} > 0xFFFF_FFFF`);
 			data_dv.setUint32(pos, v, true);
 			pos += 4;
+		};
+		const write_u64le = (v: number) => {
+			if (v > Number.MAX_SAFE_INTEGER)
+				throw new Error(`cannot safely encode to u64le, ${v} > Number.MAX_SAFE_INTEGER`);
+			data_dv.setBigUint64(pos, BigInt(v), true);
+			pos += 8;
 		};
 		const write_utf8 = (s: string) => {
 			let { written } = new TextEncoder().encodeInto(s, data_u8.subarray(pos));
@@ -89,7 +97,7 @@ class Pkg {
 		for (const { file, name_len } of this._files) {
 			write_u32le(name_len);
 			write_utf8(file.name);
-			write_u32le(file.size);
+			write_u64le(file.size);
 			const reader = file.stream().getReader();
 			while (true) {
 				const { done, value } = await reader.read();
@@ -156,6 +164,16 @@ async function _decodev1(buffer: ArrayBuffer) {
 			throw new Error(`read_u32le plain_note_len(${data_dv.byteLength}) < ${pos}`);
 		return data_dv.getUint32(start, true);
 	};
+	const read_u64le = () => {
+		const start = pos;
+		pos += 8;
+		if (data_dv.byteLength < pos)
+			throw new Error(`read_u64le plain_note_len(${data_dv.byteLength}) < ${pos}`);
+		const v = data_dv.getBigUint64(start, true);
+		if (v > Number.MAX_SAFE_INTEGER)
+			throw new Error(`cannot safely decode from u64le, ${v} > Number.MAX_SAFE_INTEGER`);
+		return Number(v);
+	};
 	const read_utf8 = (len: number) => {
 		const start = pos;
 		pos += len;
@@ -170,7 +188,7 @@ async function _decodev1(buffer: ArrayBuffer) {
 	for (let i = 0; i < files_len; ++i) {
 		const name_len = read_u32le();
 		const file_name = read_utf8(name_len);
-		const file_size = read_u32le();
+		const file_size = read_u64le();
 		const file_data = data_u8.subarray(pos, pos + file_size);
 		pos += file_size;
 		files.push({ name: file_name, data: file_data });

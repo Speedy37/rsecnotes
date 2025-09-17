@@ -35,16 +35,16 @@ const i18n = {
 		en: "seconds",
 		fr: "secondes"
 	},
+	title: {
+		en: "rsecnotes - Send encrypted notes and/or files",
+		fr: "rsecnotes - Envoyez des notes et/ou fichiers chiffrés",
+	},
 	slogan_jsx: {
 		en: () => (
-			<h2>
-				Send <span title={tr(i18n.slogan_title)}>encrypted</span> notes or files.
-			</h2>
+			<h2>Send <span title={tr(i18n.slogan_title)}>encrypted</span> notes and/or files.</h2>
 		),
 		fr: () => (
-			<h2>
-				Envoyez des notes ou des fichiers <span title={tr(i18n.slogan_title)}>chiffrés</span>
-			</h2>
+			<h2>Envoyez des notes et/ou des fichiers <span title={tr(i18n.slogan_title)}>chiffrés</span></h2>
 		),
 	},
 	slogan_title: {
@@ -56,8 +56,8 @@ const i18n = {
 		fr: "Chargement...",
 	},
 	Text: {
-		en: "Text",
-		fr: "Texte",
+		en: "Note / Text",
+		fr: "Note / Texte",
 	},
 	Files: {
 		en: "Files",
