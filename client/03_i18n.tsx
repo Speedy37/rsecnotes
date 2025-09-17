@@ -48,8 +48,8 @@ const i18n = {
 		),
 	},
 	slogan_title: {
-		en: "Encryption is done client side with AES-256-GCM and the encryption key is never sent to the server.",
-		fr: "Le chiffrement est effectué côté client avec AES-256-GCM et la clé de chiffrement n'est jamais envoyée au serveur.",
+		en: "Encryption is done by your browser with AES-256-GCM and the encryption key is never sent to the server.",
+		fr: "Le chiffrement est effectué directement par votre navigateur avec AES-256-GCM et la clé de chiffrement n'est jamais envoyée au serveur.",
 	},
 	Loading: {
 		en: "Loading...",
