@@ -1,4 +1,7 @@
-# RSecNotes
+<h1>
+    <img src="./public/icon.svg" width="32" height="32" />
+    <span>r</span><span style="margin-left: 0.25rem; color: #ffc832;">sec</span><span style="margin-left: 0.25rem; color: #083bb5;">notes</span>
+</h1>
 
 A secure sharing note and/or file(s) service, inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
 
