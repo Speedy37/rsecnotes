@@ -9,10 +9,7 @@ use axum::{
 use bytesize::ByteSize;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::{
-    sync::{Arc, Mutex},
-    u32,
-};
+use std::sync::{Arc, Mutex};
 
 mod db;
 use db::*;
@@ -122,8 +119,8 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-const X_EXPIRES_AFTER: &'static str = "x-note-expires-after";
-const X_REMAINING_VIEWS: &'static str = "x-note-remaining-views";
+const X_EXPIRES_AFTER: &str = "x-note-expires-after";
+const X_REMAINING_VIEWS: &str = "x-note-remaining-views";
 
 fn into_bad_request(e: impl ToString) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, e.to_string())
