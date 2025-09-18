@@ -1,6 +1,6 @@
 # RSecNotes
 
-A secure sharing note and or file(s) service, inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
+A secure sharing note and/or file(s) service, inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
 
 ## Features
 
@@ -16,12 +16,49 @@ A secure sharing note and or file(s) service, inspired by [cryptgeon](https://gi
 
 ## Getting Started
 
+```
+Usage: rsecnotes.exe [OPTIONS]
 
+Options:
+      --port <PORT>
+          Listen port [default: 3000]
+      --max-memory-usage <MAX_MEMORY_USAGE>
+          Maximum memory usage in bytes [default: 1GiB]
+      --max-note-size <MAX_NOTE_SIZE>
+          Maximum final size of a note in bytes (after encryption and packaging) [default: 32MiB]
+      --max-files <MAX_FILES>
+          Maximum number of files, 0 means no file allowed [default: 4294967295]
+      --default-expires-after <DEFAULT_EXPIRES_AFTER>
+          Number of seconds before this note is removed, 0 for never [default: 0]
+      --default-remaining-views <DEFAULT_REMAINING_VIEWS>
+          Number of views before this note is removed, 0 for never [default: 1]
+      --min-remaining-views <MIN_REMAINING_VIEWS>
+          Minimal number of views before this note is removed [default: 0]
+      --max-remaining-views <MAX_REMAINING_VIEWS>
+          Maximal number of views before this note is removed, 0 for no limits [default: 0]
+      --min-expires-after <MIN_EXPIRES_AFTER>
+          Minimal number of seconds before this note is removed [default: 0]
+      --max-expires-after <MAX_EXPIRES_AFTER>
+          Maximal number of seconds before this note is removed, 0 for no limits [default: 86400]
+  -h, --help
+          Print help
+```
 
 ## Contributing
 
 Contributions are welcome! Please open issues or submit pull requests.
 
+### How to build
+
+```sh
+cargo build
+```
+
+### How to iterate
+
+```sh
+cargo watch -x run
+```
 
 ## Internals
 

@@ -53,6 +53,20 @@ pub struct NoteContent {
     pub remaining_views: u32,
 }
 
+const fn note_memory_usage(data: &Bytes) -> usize {
+    const NOTE_BASE_MEMORY_USAGE: usize = size_of::<NoteId>() * 3
+        + size_of::<NoteCreatedAt>() * 2
+        + size_of::<NoteExpireAt>()
+        + size_of::<NoteContent>();
+    data.len() + NOTE_BASE_MEMORY_USAGE
+}
+
+impl NoteContent {
+    pub const fn note_memory_usage(&self) -> usize {
+        note_memory_usage(&self.data)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NoteReadContent {
     pub data: Bytes,
@@ -60,6 +74,15 @@ pub struct NoteReadContent {
     pub expires_after: Option<u32>,
     /// Number of views before this note is removed
     pub remaining_views: Option<u32>,
+}
+
+impl NoteReadContent {
+    pub const fn expired(&self) -> bool {
+        matches!(self.remaining_views, Some(0))
+    }
+    pub const fn note_memory_usage(&self) -> usize {
+        note_memory_usage(&self.data)
+    }
 }
 
 impl NoteContent {
@@ -102,16 +125,8 @@ impl Database {
         }
     }
 
-    const fn note_memory_usage(content: &NoteContent) -> usize {
-        const NOTE_BASE_MEMORY_USAGE: usize = size_of::<NoteId>() * 3
-            + size_of::<NoteCreatedAt>() * 2
-            + size_of::<NoteExpireAt>()
-            + size_of::<NoteContent>();
-        content.data.len() + NOTE_BASE_MEMORY_USAGE
-    }
-
     pub fn add_note(&mut self, content: NoteContent) -> Result<NoteId, &'static str> {
-        let note_memory_usage = Self::note_memory_usage(&content);
+        let note_memory_usage = content.note_memory_usage();
         if note_memory_usage > self.max_memory_usage {
             // error
             return Err("note too big");
@@ -260,6 +275,10 @@ impl Database {
     }
 
     fn pop_done(memory_usage: &mut usize, pop_content: &NoteContent) {
-        *memory_usage -= Self::note_memory_usage(&pop_content);
+        *memory_usage -= pop_content.note_memory_usage();
+    }
+
+    pub fn memory_usage(&self) -> usize {
+        self.memory_usage
     }
 }

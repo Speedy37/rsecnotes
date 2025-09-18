@@ -5,7 +5,7 @@ function buildSettingsStatus(remaining_views: number, expires_after: number, bVi
 	else if (remaining_views === 0)
 		return tr(i18n.Last_possible_view);
 	else
-		return tr(i18n.Note_will_expire)(remaining_views, expires_after,bView);
+		return tr(i18n.Note_will_expire)(remaining_views, expires_after, bView);
 }
 
 function render_link(note_id: string, keyb64: string) {
@@ -152,6 +152,15 @@ let server_config = {
 	default_expires_after: 0,
 	/// Number of views before this note is removed, 0 for never
 	default_remaining_views: 0,
+
+	/// Minimal number of views before this note is removed
+	min_remaining_views: 0,
+	/// Maximal number of views before this note is removed, 0 for no limits
+	max_remaining_views: 0,
+	/// Minimal number of seconds before this note is removed
+	min_expires_after: 0,
+	/// Maximal number of seconds before this note is removed, 0 for no limits
+	max_expires_after: 0,
 };
 
 function render_new_note() {
@@ -251,6 +260,8 @@ function render_new_note() {
 	let input_createbtn: HTMLButtonElement;
 	let input_status: HTMLDivElement;
 	let input_settings_status: HTMLDivElement;
+
+	const opt_max = (max: number) => max > 0 ? max.toString() : "";
 	swap_main(
 		<div id="input_block">
 			<label htmlFor="input_note">{tr(i18n.Text)}</label>
@@ -323,7 +334,7 @@ function render_new_note() {
 						<input
 							id="input_remaining_views"
 							value={server_config.default_remaining_views.toString()}
-							min="0"
+							min={server_config.min_remaining_views.toString()}
 							type="number"
 							autocomplete="off"
 						/>
@@ -338,7 +349,7 @@ function render_new_note() {
 						<input
 							id="input_expires_after"
 							value={server_config.default_expires_after.toString()}
-							min="0"
+							min={server_config.min_expires_after.toString()}
 							type="number"
 							autocomplete="off"
 						/>
@@ -357,12 +368,13 @@ function render_new_note() {
 	);
 }
 
+const main_container = document.body;
 let main_jsx: HTMLElement | null = null;
 function swap_main(jsx: HTMLElement) {
 	const old_main_jsx = main_jsx;
 	main_jsx = jsx;
-	if (old_main_jsx) document.body.replaceChild(main_jsx, old_main_jsx);
-	else document.body.append(main_jsx);
+	if (old_main_jsx) main_container.replaceChild(main_jsx, old_main_jsx);
+	else main_container.append(main_jsx);
 }
 
 async function main() {
@@ -385,7 +397,7 @@ const btn_newnote = <button id="btn_newnote" style="display: none;" onclick={() 
 	document.location = url.href;
 }}>{tr(i18n.New_note)}</button>;
 document.title = tr(i18n.title);
-document.body.append(
+main_container.append(
 	tr(i18n.slogan_jsx)(),
 	(main_jsx = <div>{tr(i18n.Loading)}</div>),
 	btn_newnote,

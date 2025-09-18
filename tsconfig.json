@@ -2,7 +2,7 @@
 	"compilerOptions": {
 		"target": "esnext", // Modern JS target
 		"module": "amd", // or "esnext" depending on your setup
-		"outFile": "../public/index.js", // compiled JS output directory
+		"outFile": "./public/index.js", // compiled JS output directory
 		"rootDir": ".", // source TS files location
 		"strict": true, // enable all strict type-checking options
 		"esModuleInterop": true, // for default import compatibility
@@ -17,13 +17,13 @@
 		"allowJs": true
 	},
 	"files": [
-		"00_types.d.ts",
-		"01_qrcode.js",
-		"02_lib.ts",
-		"03_i18n.tsx",
-		"04_pkg.ts",
-		"05_api.ts",
-		"index.tsx"
+		"./client/00_types.d.ts",
+		"./client/01_qrcode.js",
+		"./client/02_lib.ts",
+		"./client/03_i18n.tsx",
+		"./client/04_pkg.ts",
+		"./client/05_api.ts",
+		"./client/index.tsx"
 	],
-	"exclude": ["node_modules", "dist"]
+	"exclude": ["node_modules"]
 }
