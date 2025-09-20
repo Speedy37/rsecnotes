@@ -90,3 +90,91 @@ function humanReadableSecs(secs: number) {
 
 	return parts.join(" ");
 }
+
+function cryptoRandInt(max: number) {
+	if (max > 0xffff_ffff) throw new Error("max must be < u32::max");
+	if (max <= 0) throw new Error("max must be > 0");
+
+	const range = 4294967296; // number of storable values in u32 (2**32)
+	const limit = range - (range % max); // highest acceptable value
+	const buf = new Uint32Array(1);
+	while (true) {
+		crypto.getRandomValues(buf);
+		if (buf[0] < limit) return buf[0] % max;
+	}
+}
+
+type PwdOpts = {
+	len: number;
+	lower?: number;
+	upper?: number;
+	numbers?: number;
+	symbols?: number;
+};
+type PwdOptsBias = {
+	lower_bias?: number;
+	upper_bias?: number;
+	numbers_bias?: number;
+	symbols_bias?: number;
+};
+function generatePassword(opts: PwdOpts & PwdOptsBias) {
+	// Character sets
+	const sets = {
+		lower: "abcdefghijklmnopqrstuvwxyz",
+		upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		numbers: "0123456789",
+		symbols: "!@#$%^&*()-_=+[]{}|;:,.<>/?`~",
+	};
+	const classes = Object.keys(sets) as (keyof typeof sets)[];
+
+	const enabled_classes = classes.filter(c => opts[c] !== 0);
+	if (enabled_classes.length === 0) throw tr(i18n.pwd_err_noclass);
+
+	let min_len = 0;
+	for (const c of enabled_classes) {
+		min_len += opts[c] || 0;
+	}
+	if (min_len > opts.len) throw tr(i18n.pwd_err_nofit);
+
+	// Character sets selection bias (so passwords aren't filled with too much symbols for example)
+	const bias = {
+		lower: opts.lower_bias || 3,
+		upper: opts.upper_bias || 3,
+		numbers: opts.numbers_bias || 2,
+		symbols: opts.symbols_bias || 1,
+	};
+	const bias_sum = enabled_classes.reduce((acc, c) => acc + bias[c], 0);
+
+	// Select `len` characters
+	let result: string[] = [];
+	for (const c of enabled_classes) {
+		const set = sets[c];
+		let n = opts[c] || 0;
+		for (let i = 0; i < n; i++) {
+			result.push(set[cryptoRandInt(set.length)]);
+		}
+	}
+	for (let i = result.length; i < opts.len; i++) {
+		let rnd = cryptoRandInt(bias_sum);
+		let pos = 0;
+		let set;
+		for (const c of enabled_classes) {
+			pos += bias[c];
+			if (rnd < pos) {
+				set = sets[c];
+				break;
+			}
+		}
+		if  (!set)
+			throw new Error("Internal error finding class");
+		result.push(set[cryptoRandInt(set.length)]);
+	}
+
+	// Shuffle
+	for (let i = result.length - 1; i > 0; i--) {
+		const j = cryptoRandInt(i + 1);
+		[result[i], result[j]] = [result[j], result[i]];
+	}
+
+	return result.join("");
+}

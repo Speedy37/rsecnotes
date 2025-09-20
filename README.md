@@ -1,7 +1,4 @@
-<h1>
-    <img src="./public/icon.svg" width="32" height="32" />
-    <span>r</span><span style="margin-left: 0.25rem; color: #ffc832;">sec</span><span style="margin-left: 0.25rem; color: #083bb5;">notes</span>
-</h1>
+<h1><img src="docs/assets/title.svg" alt="rsecnotes" height="80"></h1>
 
 A secure sharing note and/or file(s) service, inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
 
@@ -10,7 +7,7 @@ A secure sharing note and/or file(s) service, inspired by [cryptgeon](https://gi
 - Single binary server
 - Notes are encrypted/decrypted by the browser, the encryption key never reach the server.
 - Notes are stored in memory
-- A note can contain both text and files
+- A note can contains one text, one password and multiple files
 - JSON server configuration file
 - Drag & drop files
 - 1 to 1 memory consuption (a 1GB file will take 1GB of memory, no base64 or similar)
@@ -80,9 +77,11 @@ The remaining bytes are the encrypted result of [`crypto.subtle.encrypt`](https:
 
 ```
 decrypted_data = 
-    TEXT_LEN: u32le 
-    TEXT: [u8; TEXT_LEN] 
-    FILES_LEN: u32le 
+    TEXT_LEN: u32le
+    TEXT: [u8; TEXT_LEN]
+    PWD_LEN: u32le
+    PWD: [u8; PWD_LEN]
+    FILES_LEN: u32le
     file: [FILE; FILES_LEN]
 FILE =
     NAME_LEN: u32le

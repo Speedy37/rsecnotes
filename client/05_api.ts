@@ -24,13 +24,13 @@ async function post_note(
 			if (xhr.status === 200) {
 				resolve(xhr.responseText);
 			} else {
-				reject(`Upload failed. Status: ${xhr.status}`);
+				reject(tr(i18n.post_note_failed) + " " + tr(i18n.get_note_status)(xhr.status));
 			}
 		};
 		xhr.setRequestHeader(X_EXPIRES_AFTER, settings.expires_after.toFixed());
 		xhr.setRequestHeader(X_REMAINING_VIEWS, settings.remaining_views.toFixed());
 		xhr.onerror = () => {
-			reject("Upload error.");
+			reject(tr(i18n.post_note_failed));
 		};
 
 		xhr.send(blob);
@@ -68,13 +68,13 @@ async function get_note(
 
 				resolve(res);
 			} else if (xhr.status === 404) {
-				reject(`Note not found (probably expired)`);
+				reject(tr(i18n.get_note_404));
 			} else {
-				reject(`Download failed. Status code: ${xhr.status}`);
+				reject(tr(i18n.get_note_failed) + " " + tr(i18n.get_note_status)(xhr.status));
 			}
 		};
 		xhr.onerror = () => {
-			reject("Upload error.");
+			reject(tr(i18n.get_note_failed));
 		};
 
 		xhr.send();

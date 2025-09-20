@@ -18,7 +18,7 @@ async function _importAesGcmKey(rawKey: Uint8Array<ArrayBuffer>): Promise<Crypto
 
 const _VERSION_1 = 1;
 const _V1_HEADER_LEN = 1 /* version */ + 12; /* iv*/
-const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4; /* files len */
+const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4 /* pwd len */ + 4; /* files len */
 const _V1_FILE_HEADER_LEN = 4 /* name len */ + 4; /* file len */
 
 function _utf8_len(s: string): number {
@@ -27,8 +27,10 @@ function _utf8_len(s: string): number {
 
 class Pkg {
 	private _text: string = "";
+	private _pwd: string = "";
 	private _files: { file: File; name_len: number }[] = [];
 	private _text_len: number | null = null;
+	private _pwd_len: number | null = null;
 	private _file_len: number = 0;
 
 	constructor() {}
@@ -62,12 +64,25 @@ class Pkg {
 		if (this._text_len === null) this._text_len = _utf8_len(this._text);
 		return this._text_len;
 	}
+	
+	get pwd(): string {
+		return this._pwd;
+	}
+	set pwd(pwd: string) {
+		this._pwd = pwd;
+		this._pwd_len = null;
+	}
+	get pwd_len(): number {
+		if (this._pwd_len === null) this._pwd_len = _utf8_len(this._pwd);
+		return this._pwd_len;
+	}
+
 	get total_len(): number {
-		return _V1_HEADER_LEN + _V1_DATA_HEADER_LEN + this.text_len + this._file_len;
+		return _V1_HEADER_LEN + _V1_DATA_HEADER_LEN + this.text_len + this.pwd_len + this._file_len;
 	}
 
 	get empty(): boolean {
-		return this._text.length === 0 && this._files.length === 0;
+		return this._text.length === 0 && this._pwd.length === 0 && this._files.length === 0;
 	}
 
 	async encode(): Promise<Uint8Array<ArrayBuffer>> {
@@ -93,6 +108,8 @@ class Pkg {
 		};
 		write_u32le(this.text_len);
 		write_utf8(this._text);
+		write_u32le(this.pwd_len);
+		write_utf8(this.pwd);
 		write_u32le(this._files.length);
 		for (const { file, name_len } of this._files) {
 			write_u32le(name_len);
@@ -131,7 +148,7 @@ class Pkg {
 	}
 }
 
-type DecryptedNote = { text: string; files: { name: string; data: Uint8Array<ArrayBuffer> }[] };
+type DecryptedNote = { text: string; pwd: string; files: { name: string; data: Uint8Array<ArrayBuffer> }[] };
 async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNote> {
 	const data_u8 = new Uint8Array(buffer);
 	const version = data_u8[0];
@@ -183,6 +200,8 @@ async function _decodev1(buffer: ArrayBuffer) {
 	};
 	const text_len = read_u32le();
 	const text = read_utf8(text_len);
+	const pwd_len = read_u32le();
+	const pwd = read_utf8(pwd_len);
 	const files_len = read_u32le();
 	const files = [];
 	for (let i = 0; i < files_len; ++i) {
@@ -194,5 +213,5 @@ async function _decodev1(buffer: ArrayBuffer) {
 		files.push({ name: file_name, data: file_data });
 	}
 
-	return { text, files };
+	return { text, pwd, files };
 }

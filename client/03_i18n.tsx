@@ -165,16 +165,83 @@ const i18n = {
 		en: "New note",
 		fr: "Nouvelle note"
 	},
+	auto: {
+		en: "theme auto",
+		fr: "theme automatique",
+	},
+	light: {
+		en: "theme light",
+		fr: "theme clair",
+	},
+	dark: {
+		en: "theme dark",
+		fr: "theme sombre",
+	},
+	Password: {
+		en: "Password",
+		fr: "Mot de passe",
+	},
+	pwd_len: {
+		en: "Password length",
+		fr: "Longueur du mot de passe"
+	},
+	pwd_lower: {
+		en: "Lowercase letters",
+		fr: "Lettres minuscules"
+	},
+	pwd_upper: {
+		en: "Uppercase letters",
+		fr: "Lettres majuscules"
+	},
+	pwd_numbers: {
+		en: "Numbers",
+		fr: "Chiffres"
+	},
+	pwd_symbols: {
+		en: "Symbols",
+		fr: "Symboles"
+	},
+	pwd_remains: {
+		en: "Remains",
+		fr: "Reste"
+	},
+	pwd_err_noclass: {
+		en: "At least one character class must be enabled",
+		fr: "Au moins une catégorie de caractères doit être activée"
+	},
+	pwd_err_nofit: {
+		en: "Required classes doesn't fit",
+		fr: "Les catégories de caractères requises ne tiennent pas",
+	},
+	get_note_404: {
+		en: "Note not found (probably expired)",
+		fr: "Note non trouvée (probablement expirée)"
+	},
+	get_note_status: {
+		en: (status: number) => `Status code: ${status}`,
+		fr: (status: number) => `Code d'état : ${status}`,
+	},
+	get_note_failed: {
+		en: "Download failed.",
+		fr: "Échec du téléchargement.",
+	},
+	post_note_failed: {
+		en: "Upload failed.",
+		fr: "Échec de l'envoi.",
+	},
 };
 
 let langs: string[] = [];
-if (!langs.includes("fr")) langs.push("fr");
+function set_langs(new_langs: string[]) {
+	if (!new_langs.includes("en")) new_langs.push("en");
+	langs = new_langs;
+}
 for (let lang of navigator.languages) {
 	let prefix = lang.split("-")[0];
 	if (!langs.includes(prefix)) langs.push(prefix);
 	if (!langs.includes(lang)) langs.push(lang);
 }
-if (!langs.includes("en")) langs.push("en");
+set_langs(langs);
 
 type Tr<Item> = Item[keyof Item];
 function tr<Item extends (typeof i18n)[keyof typeof i18n]>(k: Item): Item[keyof Item] {
