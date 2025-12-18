@@ -7,6 +7,9 @@ use axum::body::Bytes;
 use base64::Engine;
 use rand::Rng;
 
+use crate::ConfigFileSlot;
+use crate::util::Size;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NoteId {
     /// Unique non guessable id (256bits)
@@ -53,16 +56,18 @@ pub struct NoteContent {
     pub remaining_views: u32,
 }
 
-const fn note_memory_usage(data: &Bytes) -> usize {
+const fn note_memory_usage(data: &Bytes) -> Size {
     const NOTE_BASE_MEMORY_USAGE: usize = size_of::<NoteId>() * 3
         + size_of::<NoteCreatedAt>() * 2
         + size_of::<NoteExpireAt>()
         + size_of::<NoteContent>();
-    data.len() + NOTE_BASE_MEMORY_USAGE
+    Size {
+        bytes: data.len() + NOTE_BASE_MEMORY_USAGE,
+    }
 }
 
 impl NoteContent {
-    pub const fn note_memory_usage(&self) -> usize {
+    pub const fn note_memory_usage(&self) -> Size {
         note_memory_usage(&self.data)
     }
 }
@@ -77,10 +82,7 @@ pub struct NoteReadContent {
 }
 
 impl NoteReadContent {
-    pub const fn expired(&self) -> bool {
-        matches!(self.remaining_views, Some(0))
-    }
-    pub const fn note_memory_usage(&self) -> usize {
+    pub const fn note_memory_usage(&self) -> Size {
         note_memory_usage(&self.data)
     }
 }
@@ -103,49 +105,95 @@ struct NoteCreatedAt(Instant);
 struct NoteExpireAt(Instant);
 
 #[derive(Debug)]
-pub struct Database {
-    notes_by_id: HashMap<NoteId, (NoteCreatedAt, NoteContent)>,
+struct DatabaseSlot {
     /// Notes (created_at, instant) sorted by created_at order
     notes: VecDeque<(NoteCreatedAt, NoteId)>,
+    stats: DatabaseSlotStats,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DatabaseSlotIdx(pub usize);
+
+#[derive(Debug)]
+pub struct DatabaseInner {
+    notes_by_id: HashMap<NoteId, (DatabaseSlotIdx, NoteCreatedAt, NoteContent)>,
     /// Note ids sorted by expiration order
     expiring_notes: BTreeMap<NoteExpireAt, NoteId>,
+}
+
+#[derive(Debug)]
+pub struct Database {
+    inner: DatabaseInner,
+    /// Non empty, ordered by max_note_size
+    slots: Vec<DatabaseSlot>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DatabaseSlotStats {
     /// Sum of notes sizes (ie. memory usage)
-    memory_usage: usize,
-    max_memory_usage: usize,
+    pub memory_usage: Size,
+    /// Maximum note size to be in this slot
+    pub max_note_size: Size,
+    /// Maximum memory usage in bytes of this slot
+    pub max_memory_usage: Size,
 }
 
 impl Database {
-    pub fn new(max_memory_usage: usize) -> Self {
+    pub fn new(slots: &[ConfigFileSlot]) -> Self {
         Self {
-            notes_by_id: Default::default(),
-            notes: Default::default(),
-            expiring_notes: Default::default(),
-            memory_usage: 0,
-            max_memory_usage,
+            inner: DatabaseInner {
+                notes_by_id: Default::default(),
+                expiring_notes: Default::default(),
+            },
+            slots: slots
+                .iter()
+                .map(|slot| DatabaseSlot {
+                    notes: Default::default(),
+                    stats: DatabaseSlotStats {
+                        memory_usage: Size { bytes: 0 },
+                        max_note_size: Size {
+                            bytes: slot.max_note_size.bytes,
+                        },
+                        max_memory_usage: Size {
+                            bytes: slot.max_memory_usage.bytes,
+                        },
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    fn slot_mut(
+        slots: &mut Vec<DatabaseSlot>,
+        note_memory_usage: Size,
+    ) -> Option<(DatabaseSlotIdx, &mut DatabaseSlot)> {
+        match slots.binary_search_by_key(&note_memory_usage, |slot| slot.stats.max_note_size) {
+            Ok(index) | Err(index) => slots
+                .get_mut(index)
+                .map(|slot| (DatabaseSlotIdx(index), slot)),
         }
     }
 
     pub fn add_note(&mut self, content: NoteContent) -> Result<NoteId, &'static str> {
+        let now = Instant::now();
+        self.collect_expired_notes(now);
+
         let note_memory_usage = content.note_memory_usage();
-        if note_memory_usage > self.max_memory_usage {
-            // error
-            return Err("note too big");
-        }
+        let (slot_idx, slot) =
+            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or_else(|| "note too big")?;
 
         let note_id = loop {
             let id = NoteId::generate();
-            if !self.notes_by_id.contains_key(&id) {
+            if !self.inner.notes_by_id.contains_key(&id) {
                 break id;
             }
             // collision, try again
         };
 
-        let now = Instant::now();
-
         let created_at = {
             // force created_at to be unique and incremental
             let mut created_at =
-                NoteCreatedAt(match self.notes.back().filter(|(at, _)| at.0 >= now) {
+                NoteCreatedAt(match slot.notes.back().filter(|(at, _)| at.0 >= now) {
                     Some((at, _)) => at.0 + Duration::from_nanos(1),
                     None => now,
                 });
@@ -156,7 +204,7 @@ impl Database {
                     let pop_expire_at = NoteExpireAt(
                         created_at.0 + Duration::from_secs(content.expires_after.into()),
                     );
-                    if !self.expiring_notes.contains_key(&pop_expire_at) {
+                    if !self.inner.expiring_notes.contains_key(&pop_expire_at) {
                         break;
                     }
                     created_at.0 += Duration::from_nanos(1);
@@ -165,62 +213,82 @@ impl Database {
             created_at
         };
 
-        self.collect_expired_notes(now);
-        self.reclaim_memory_to_fit_note(note_memory_usage);
+        let reclaimed = Self::reclaim_memory_to_fit_note(&mut self.inner, slot, note_memory_usage);
 
         // insertion
 
         if let Some(expire_at) = content.expire_at(created_at) {
-            self.expiring_notes.insert(expire_at, note_id);
+            self.inner.expiring_notes.insert(expire_at, note_id);
         }
-        self.notes.push_back((created_at, note_id));
-        self.notes_by_id.insert(note_id, (created_at, content));
-        self.memory_usage += note_memory_usage;
+        slot.notes.push_back((created_at, note_id));
+        self.inner
+            .notes_by_id
+            .insert(note_id, (slot_idx, created_at, content));
+        slot.stats.memory_usage.bytes += note_memory_usage.bytes;
+
+        for reclaimed_note_memory_usage in reclaimed {
+            self.log_event("reclaim note to fit", '-', reclaimed_note_memory_usage);
+        }
+        self.log_event("new  note", '+', note_memory_usage);
         Ok(note_id)
     }
 
-    fn collect_expired_notes(&mut self, now: Instant) {
+    pub fn collect_expired_notes(&mut self, now: Instant) {
         while let Some(e) = self
+            .inner
             .expiring_notes
             .first_entry()
             .filter(|e| e.key().0 < now)
         {
             // note expired
             let pop_id: NoteId = e.remove(); //< pop_from_expiring_notes
-            let (pop_at, pop_content) = Self::pop_from_notes_by_id(&mut self.notes_by_id, &pop_id);
-            Self::pop_from_notes(&mut self.notes, &pop_at);
-            Self::pop_done(&mut self.memory_usage, &pop_content);
+            let (pop_slot_idx, pop_at, pop_content) =
+                Self::pop_from_notes_by_id(&mut self.inner.notes_by_id, &pop_id);
+            let slot = &mut self.slots[pop_slot_idx.0];
+            Self::pop_from_notes(&mut slot.notes, &pop_at);
+            Self::pop_done(&mut slot.stats.memory_usage, &pop_content);
+            self.log_event("collect expired note", '-', pop_content.note_memory_usage());
         }
     }
 
-    fn reclaim_memory_to_fit_note(&mut self, note_memory_usage: usize) {
-        assert!(note_memory_usage <= self.max_memory_usage);
-        while !self.notes_by_id.is_empty()
-            && self.memory_usage + note_memory_usage > self.max_memory_usage
+    fn reclaim_memory_to_fit_note(
+        inner: &mut DatabaseInner,
+        slot: &mut DatabaseSlot,
+        note_memory_usage: Size,
+    ) -> Vec<Size> {
+        let mut reclaimed = Vec::new();
+        assert!(note_memory_usage <= slot.stats.max_memory_usage);
+        while !slot.notes.is_empty()
+            && slot.stats.memory_usage + note_memory_usage > slot.stats.max_memory_usage
         {
-            let pop_id: NoteId = self.notes.pop_front().expect("note").1; //< pop_from_notes
-            let (pop_at, pop_content) = Self::pop_from_notes_by_id(&mut self.notes_by_id, &pop_id);
-            Self::pop_from_expiring_notes(&mut self.expiring_notes, pop_at, &pop_content);
-            Self::pop_done(&mut self.memory_usage, &pop_content);
+            let pop_id: NoteId = slot.notes.pop_front().expect("note").1; //< pop_from_notes
+            let (_pop_slot_idx, pop_at, pop_content) =
+                Self::pop_from_notes_by_id(&mut inner.notes_by_id, &pop_id);
+            Self::pop_from_expiring_notes(&mut inner.expiring_notes, pop_at, &pop_content);
+            Self::pop_done(&mut slot.stats.memory_usage, &pop_content);
+            reclaimed.push(pop_content.note_memory_usage());
         }
+        reclaimed
     }
 
     pub fn read_note(&mut self, note_id: NoteId) -> Option<NoteReadContent> {
         let now = Instant::now();
         self.collect_expired_notes(now);
-        let mut entry = match self.notes_by_id.entry(note_id) {
+        let mut entry = match self.inner.notes_by_id.entry(note_id) {
             Entry::Occupied(occupied_entry) => occupied_entry,
             Entry::Vacant(_vacant_entry) => return None,
         };
-        let &mut (created_at, ref mut content) = entry.get_mut();
+        let &mut (_slot_idx, created_at, ref mut content) = entry.get_mut();
         if content.remaining_views > 0 {
             content.remaining_views -= 1;
             if content.remaining_views == 0 {
                 // remove
-                let (pop_at, pop_content) = entry.remove(); //< pop_from_notes_by_id
-                Self::pop_from_expiring_notes(&mut self.expiring_notes, pop_at, &pop_content);
-                Self::pop_from_notes(&mut self.notes, &created_at);
-                Self::pop_done(&mut self.memory_usage, &pop_content);
+                let (pop_slot_idx, pop_at, pop_content) = entry.remove(); //< pop_from_notes_by_id
+                Self::pop_from_expiring_notes(&mut self.inner.expiring_notes, pop_at, &pop_content);
+                let slot = &mut self.slots[pop_slot_idx.0];
+                Self::pop_from_notes(&mut slot.notes, &created_at);
+                Self::pop_done(&mut slot.stats.memory_usage, &pop_content);
+                self.log_event("read note (expired)", '-', pop_content.note_memory_usage());
                 return Some(NoteReadContent {
                     data: pop_content.data.clone(), // cheap clone
                     expires_after: None,
@@ -229,7 +297,7 @@ impl Database {
             }
         }
 
-        Some(NoteReadContent {
+        let note = NoteReadContent {
             data: content.data.clone(), // cheap clone
             expires_after: if content.expires_after > 0 {
                 let elapsed_secs: u32 = (now - created_at.0)
@@ -245,13 +313,15 @@ impl Database {
             } else {
                 None
             },
-        })
+        };
+        self.log_event("read note", ' ', note.note_memory_usage());
+        Some(note)
     }
 
     fn pop_from_notes_by_id(
-        notes_by_id: &mut HashMap<NoteId, (NoteCreatedAt, NoteContent)>,
+        notes_by_id: &mut HashMap<NoteId, (DatabaseSlotIdx, NoteCreatedAt, NoteContent)>,
         pop_id: &NoteId,
-    ) -> (NoteCreatedAt, NoteContent) {
+    ) -> (DatabaseSlotIdx, NoteCreatedAt, NoteContent) {
         notes_by_id.remove(pop_id).expect("note by id")
     }
 
@@ -274,11 +344,65 @@ impl Database {
         }
     }
 
-    fn pop_done(memory_usage: &mut usize, pop_content: &NoteContent) {
-        *memory_usage -= pop_content.note_memory_usage();
+    fn pop_done(memory_usage: &mut Size, pop_content: &NoteContent) {
+        memory_usage.bytes -= pop_content.note_memory_usage().bytes;
     }
 
-    pub fn memory_usage(&self) -> usize {
-        self.memory_usage
+    pub fn memory_usage(&self) -> Size {
+        Size {
+            bytes: self
+                .slots
+                .iter()
+                .map(|slot| slot.stats.memory_usage.bytes)
+                .sum(),
+        }
+    }
+
+    pub fn max_memory_usage(&self) -> Size {
+        Size {
+            bytes: self
+                .slots
+                .iter()
+                .map(|slot| slot.stats.max_memory_usage.bytes)
+                .sum(),
+        }
+    }
+
+    pub fn max_note_size(&self) -> Size {
+        Size {
+            bytes: self
+                .slots
+                .iter()
+                .map(|slot| slot.stats.max_note_size.bytes)
+                .sum(),
+        }
+    }
+
+    pub fn slot_stats_iter(&self) -> impl ExactSizeIterator<Item = DatabaseSlotStats> {
+        self.slots.iter().map(|slot| slot.stats)
+    }
+
+    fn log_event(&self, event: &str, action: char, note_memory_usage: Size) {
+        use std::fmt::Write;
+
+        let db_memory_usage = self.memory_usage();
+        let max_memory_usage = self.max_memory_usage();
+        let now = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let mut log = String::new();
+        log.reserve(256);
+        (|| -> std::fmt::Result {
+            write!(&mut log, "{now}: {event:20} {action}{note_memory_usage:5}")?;
+            for s in self.slot_stats_iter() {
+                write!(
+                    &mut log,
+                    ",\t{:5}/{:5}[<{}]",
+                    s.memory_usage, s.max_memory_usage, s.max_note_size
+                )?;
+            }
+            write!(&mut log, ",\tsum = {db_memory_usage}/{max_memory_usage}")?;
+            Ok(())
+        }())
+        .expect("write! to String to not fail");
+        println!("{log}");
     }
 }

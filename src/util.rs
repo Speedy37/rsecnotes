@@ -1,5 +1,8 @@
+use std::fmt;
+use std::ops::Add;
 use std::str::FromStr;
 
+use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,7 +45,7 @@ impl FromStr for Duration {
             .as_bytes()
             .trim_ascii()
             .chunk_by(|a, b| a.is_ascii_digit() == b.is_ascii_digit());
-
+        let mut did_loop = false;
         loop {
             let digits = it.next();
             let digits = digits.and_then(|digits| {
@@ -61,8 +64,10 @@ impl FromStr for Duration {
                 (Some(digits), Some(b"s")) => seconds += digits,
                 (Some(_), _) => return Err("invalid duration, 'd', 'h', 'm' or 's' expected"),
                 (None, Some(_)) => return Err("invalid duration, <digits> expected"),
+                (None, None) if !did_loop => return Err("invalid duration, <digits> expected"),
                 (None, None) => return Ok(Duration { seconds }),
             }
+            did_loop = true;
         }
     }
 }
@@ -70,7 +75,24 @@ impl FromStr for Duration {
 impl std::fmt::Debug for Duration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(self, f)?;
-        write!(f, "({} seconds)", self.seconds)
+        write!(f, " ({} seconds)", self.seconds)
+    }
+}
+
+struct DurationVisitor;
+
+impl<'de> Visitor<'de> for DurationVisitor {
+    type Value = Duration;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a duration (eg. 10h 30m)")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Duration::from_str(v).map_err(|err| serde::de::Error::custom(err))
     }
 }
 
@@ -79,8 +101,7 @@ impl<'de> Deserialize<'de> for Duration {
     where
         D: serde::Deserializer<'de>,
     {
-        let str = <&str>::deserialize(deserializer)?;
-        Self::from_str(str).map_err(|err| serde::de::Error::custom(err))
+        deserializer.deserialize_str(DurationVisitor)
     }
 }
 impl Serialize for Duration {
@@ -97,10 +118,19 @@ pub struct Size {
     pub bytes: usize,
 }
 
-const GB: usize = 1024 * 1024 * 1024;
-const MB: usize = 1024 * 1024;
 const KB: usize = 1024;
-const B: usize = 1;
+const MB: usize = 1024 * KB;
+const GB: usize = 1024 * MB;
+
+impl Add for Size {
+    type Output = Size;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Size {
+            bytes: self.bytes + rhs.bytes,
+        }
+    }
+}
 
 impl std::fmt::Display for Size {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -108,23 +138,19 @@ impl std::fmt::Display for Size {
             f.write_str("0B")?;
             return Ok(());
         }
-
-        let units = [("GB", GB), ("MB", MB), ("KB", KB), ("B", B)];
-        let mut bytes = self.bytes;
-        let mut pending_space = false;
-        for (name, size) in units {
-            let val = bytes / size;
-            bytes %= size;
-            if val > 0 {
-                if pending_space {
-                    f.write_str(" ")?;
-                }
-                std::fmt::Display::fmt(&val, f)?;
-                f.write_str(name)?;
-                pending_space = true;
-            }
+        let bytes = self.bytes as f64;
+        let (digits, unit) = match self.bytes {
+            GB.. => (bytes / (GB as f64), "GB"),
+            MB..GB => (bytes / (MB as f64), "MB"),
+            KB..MB => (bytes / (KB as f64), "KB"),
+            ..KB => (bytes, "B"),
+        };
+        if digits.fract() == 0.0 {
+            write!(f, "{digits:.0}{unit}")
+        } else {
+            let precision = f.precision().unwrap_or(1);
+            write!(f, "{digits:.precision$}{unit}")
         }
-        Ok(())
     }
 }
 
@@ -132,39 +158,53 @@ impl FromStr for Size {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut bytes: usize = 0;
-        let mut it = s
-            .as_bytes()
-            .trim_ascii()
-            .chunk_by(|a, b| a.is_ascii_digit() == b.is_ascii_digit());
-        loop {
-            let digits = it.next();
-            let digits = digits.and_then(|digits| {
-                digits
-                    .iter()
-                    .copied()
-                    .take_while(u8::is_ascii_digit)
-                    .map(|digit| usize::from(digit - b'0'))
-                    .reduce(|acc, digit| acc * 10 + digit)
-            });
-            let unit = it.next().map(|unit| unit.trim_ascii());
-            match (digits, unit) {
-                (Some(digits), Some(b"GB")) => bytes += digits * GB,
-                (Some(digits), Some(b"MB")) => bytes += digits * MB,
-                (Some(digits), Some(b"KB")) => bytes += digits * KB,
-                (Some(digits), Some(b"B")) => bytes += digits,
-                (Some(_), _) => return Err("invalid size, 'GB', 'KB', 'MB' or 'B' expected"),
-                (None, Some(_)) => return Err("invalid size, <digits> expected"),
-                (None, None) => return Ok(Size { bytes }),
-            }
-        }
+        let s = s.trim_ascii();
+        let digits_len = s
+            .chars()
+            .take_while(|&c| c.is_ascii_digit() || c == '.')
+            .count();
+        let (digits, unit) = s.split_at(digits_len);
+        let unit = unit.trim_ascii();
+        let digits =
+            f64::from_str(digits).map_err(|_| "invalid size, <digits>[.<digits>] expected")?;
+        let mult = match unit {
+            "GB" => GB as f64,
+            "MB" => MB as f64,
+            "KB" => KB as f64,
+            "B" => 1f64,
+            _ => return Err("invalid size, 'GB', 'KB', 'MB' or 'B' expected"),
+        };
+        let digits = digits * mult;
+        const MAX: f64 = usize::MAX as f64;
+        let bytes = match digits * mult {
+            0f64..=MAX => digits as usize,
+            _ => return Err("invalid size, overflow"),
+        };
+        Ok(Size { bytes })
     }
 }
 
 impl std::fmt::Debug for Size {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(self, f)?;
-        write!(f, "({} bytes)", self.bytes)
+        write!(f, " ({} bytes)", self.bytes)
+    }
+}
+
+struct SizeVisitor;
+
+impl<'de> Visitor<'de> for SizeVisitor {
+    type Value = Size;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a size (eg. 1.5GB)")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Size::from_str(v).map_err(|err| serde::de::Error::custom(err))
     }
 }
 
@@ -173,8 +213,7 @@ impl<'de> Deserialize<'de> for Size {
     where
         D: serde::Deserializer<'de>,
     {
-        let str = <&str>::deserialize(deserializer)?;
-        Self::from_str(str).map_err(|err| serde::de::Error::custom(err))
+        deserializer.deserialize_str(SizeVisitor)
     }
 }
 impl Serialize for Size {
@@ -205,6 +244,22 @@ mod tests {
         test_parse(" 30s 1m  ", "1m 30s", 90);
         test_parse("1d3600s", "1d 1h", 90000);
         test_parse("10d 7h 6m20s", "10d 7h 6m 20s", 889580);
+        assert_eq!(
+            Duration::from_str(""),
+            Err("invalid duration, <digits> expected")
+        );
+        assert_eq!(
+            Duration::from_str("1..0d"),
+            Err("invalid duration, 'd', 'h', 'm' or 's' expected")
+        );
+        assert_eq!(
+            Duration::from_str("1"),
+            Err("invalid duration, 'd', 'h', 'm' or 's' expected")
+        );
+        assert_eq!(
+            Duration::from_str("1dm"),
+            Err("invalid duration, 'd', 'h', 'm' or 's' expected")
+        );
     }
 
     #[test]
@@ -216,11 +271,24 @@ mod tests {
         }
         test_parse("0B", "0B", 0);
         test_parse("60B", "60B", 60);
-        test_parse("1MB30B", "1MB 30B", 1*MB+30*B);
-        test_parse("1MB 30B", "1MB 30B", 1*MB+30*B);
-        test_parse(" 1MB 30B  ", "1MB 30B", 1*MB+30*B);
-        test_parse(" 30GB 1MB  ", "30GB 1MB", 30*GB+1*MB);
-        test_parse("1GB3600MB", "4GB 528MB", 1*GB+3600*MB);
-        test_parse("10GB 7MB 6KB20B", "10GB 7MB 6KB 20B", 10*GB+7*MB+6*KB+20*B);
+        test_parse("256.0 KB", "256KB", 256 * KB);
+        test_parse("1.5MB", "1.5MB", 1 * MB + 512 * KB);
+        test_parse("1.5GB", "1.5GB", 1 * GB + 512 * MB);
+        assert_eq!(
+            Size::from_str(""),
+            Err("invalid size, <digits>[.<digits>] expected")
+        );
+        assert_eq!(
+            Size::from_str("1..0B"),
+            Err("invalid size, <digits>[.<digits>] expected")
+        );
+        assert_eq!(
+            Size::from_str("1"),
+            Err("invalid size, 'GB', 'KB', 'MB' or 'B' expected")
+        );
+        assert_eq!(
+            Size::from_str("1LB"),
+            Err("invalid size, 'GB', 'KB', 'MB' or 'B' expected")
+        );
     }
 }

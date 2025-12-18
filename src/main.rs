@@ -6,61 +6,120 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use bytesize::ByteSize;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::{
+    fs::{self},
+    io::Write,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 mod db;
+mod util;
 use db::*;
+
+use crate::util::{Duration, Size};
 
 /// A secure sharing note and or file(s) service.
 #[derive(Parser, Debug)]
-struct Args {
-    /// Listen port
-    #[arg(long, default_value_t = 3000)]
-    pub port: u32,
-
-    /// Maximum memory usage in bytes
-    #[arg(long, default_value = "1GiB")]
-    pub max_memory_usage: ByteSize,
-
-    #[command(flatten)]
-    pub public: PublicConfig,
+enum Args {
+    /// Generate a default configuration file
+    GenerateConfig {
+        /// Path to the config file
+        #[arg(short, long)]
+        config: String,
+        /// Overwrite if config file already exists
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Run the server
+    Run {
+        /// Path to the config file
+        #[arg(short, long)]
+        config: String,
+    },
 }
 
-#[derive(Parser, Debug, Serialize, Deserialize, Clone, Copy)]
-pub struct PublicConfig {
-    /// Maximum final size of a note in bytes (after encryption and packaging)
-    #[arg(long, default_value = "32MiB")]
-    pub max_note_size: ByteSize,
+const EXAMPLE_CONFIG: &[u8] = include_bytes!("./config.example.toml");
 
-    /// Maximum number of files, 0 means no file allowed
-    #[arg(long, default_value_t = u32::MAX)]
-    pub max_files: u32,
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+struct ConfigFile {
+    pub server_settings: ConfigFileServer,
+    pub client_settings: ConfigFileClient,
+}
 
-    /// Number of seconds before this note is removed, 0 for never
-    #[arg(long, default_value_t = 0)]
-    pub default_expires_after: u32,
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+struct ConfigFileServer {
+    /// Listen address
+    #[serde(default)]
+    pub host: String,
 
-    /// Number of views before this note is removed, 0 for never
-    #[arg(long, default_value_t = 1)]
-    pub default_remaining_views: u32,
+    /// Listen port
+    pub port: u32,
+
+    /// Notes are put into the slot with the lowest `max_note_size` that let it fit
+    /// This allow for big notes to not force small notes reclamation for memory.
+    /// Reclamation for memory inside a slot is always done from oldest to newest.
+    pub slots: Vec<ConfigFileSlot>,
 
     /// Minimal number of views before this note is removed
-    #[arg(long, default_value_t = 0)]
     pub min_remaining_views: u32,
 
     /// Maximal number of views before this note is removed, 0 for no limits
-    #[arg(long, default_value_t = 0)]
     pub max_remaining_views: u32,
 
     /// Minimal number of seconds before this note is removed
-    #[arg(long, default_value_t = 0)]
-    pub min_expires_after: u32,
+    pub min_expires_after: Duration,
 
     /// Maximal number of seconds before this note is removed, 0 for no limits
-    #[arg(long, default_value_t = 3600*24)]
+    pub max_expires_after: Duration,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+struct ConfigFileClient {
+    /// Maximum number of files, 0 means no file allowed
+    pub max_files: u32,
+
+    /// Number of seconds before this note is removed, 0 for never
+    pub default_expires_after: Duration,
+
+    /// Number of views before this note is removed, 0 for never
+    pub default_remaining_views: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ConfigFileSlot {
+    /// Maximum final size of a note in bytes (after encryption and packaging)
+    pub max_note_size: Size,
+    /// Maximum memory usage in bytes of this slot
+    pub max_memory_usage: Size,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PublicConfig {
+    /// Maximum final size of a note in bytes (after encryption and packaging), server enforced
+    pub max_note_size: usize,
+
+    /// Maximum number of files, 0 means no file allowed
+    pub max_files: u32,
+
+    /// Number of seconds before this note is removed, 0 for never
+    pub default_expires_after: u32,
+
+    /// Number of views before this note is removed, 0 for never
+    pub default_remaining_views: u32,
+
+    /// Minimal number of views before this note is remove, server enforced
+    pub min_remaining_views: u32,
+
+    /// Maximal number of views before this note is removed, 0 for no limits, server enforced
+    pub max_remaining_views: u32,
+
+    /// Minimal number of seconds before this note is removed, server enforced
+    pub min_expires_after: u32,
+
+    /// Maximal number of seconds before this note is removed, 0 for no limits, server enforced
     pub max_expires_after: u32,
 }
 
@@ -92,12 +151,43 @@ static_file!(IconSvg, b"image/svg+xml", "/icon.svg");
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    match args {
+        Args::GenerateConfig { config, force } => {
+            let mut options = fs::OpenOptions::new();
+            options.write(true);
+            if force {
+                options.create_new(true);
+            } else {
+                options.create(true);
+                options.truncate(true);
+            }
+            let mut file = options.open(config)?;
+            file.write_all(EXAMPLE_CONFIG)?;
+            Ok(())
+        }
+        Args::Run { config } => {
+            let config: Vec<u8> = fs::read(config)?;
+            let config: ConfigFile = toml::from_slice(&config)?;
+            main_run(&config).await
+        }
+    }
+}
 
-    let max_memory_usage = args.max_memory_usage.as_u64() as usize;
-    let db = Mutex::new(Database::new(max_memory_usage));
+async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
+    let db = Database::new(&config.server_settings.slots);
+    let max_note_size = db.max_note_size();
     let appstate = Arc::new(AppState {
-        config: args.public,
-        db,
+        config: PublicConfig {
+            max_note_size: max_note_size.bytes,
+            max_files: config.client_settings.max_files,
+            default_expires_after: config.client_settings.default_expires_after.seconds,
+            default_remaining_views: config.client_settings.default_remaining_views,
+            min_remaining_views: config.server_settings.min_remaining_views,
+            max_remaining_views: config.server_settings.max_remaining_views,
+            min_expires_after: config.server_settings.min_expires_after.seconds,
+            max_expires_after: config.server_settings.max_expires_after.seconds,
+        },
+        db: Mutex::new(db),
     });
 
     let app = Router::new()
@@ -109,14 +199,29 @@ async fn main() -> anyhow::Result<()> {
         .route("/config", get(handler_config))
         .route("/notes", post(handler_add_note))
         .route("/notes/{note_id}", get(handler_read_note))
-        .layer(DefaultBodyLimit::max(max_memory_usage))
-        .with_state(appstate);
+        .layer(DefaultBodyLimit::max(max_note_size.bytes))
+        .with_state(appstate.clone());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let listener = tokio::net::TcpListener::bind(format!(
+        "{}:{}",
+        config.server_settings.host, config.server_settings.port
+    ))
+    .await?;
     println!("Listening on http://{}", listener.local_addr()?);
-    println!("{:#?}", &args);
-    axum::serve(listener, app).await?;
+    println!("{:#?}", &config);
+    tokio::try_join!(collect_expired_notes(appstate), axum::serve(listener, app))?;
     Ok(())
+}
+
+async fn collect_expired_notes(appstate: Arc<AppState>) -> std::io::Result<()> {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+    loop {
+        interval.tick().await;
+
+        let mut db_guarded = appstate.db.lock().unwrap();
+        db_guarded.collect_expired_notes(Instant::now());
+    }
 }
 
 const X_EXPIRES_AFTER: &str = "x-note-expires-after";
@@ -131,7 +236,7 @@ async fn handler_static<S: StaticFile>() -> impl IntoResponse {
 }
 
 async fn handler_config(State(appstate): State<Arc<AppState>>) -> Json<PublicConfig> {
-    Json(appstate.config)
+    Json(appstate.config.clone())
 }
 
 async fn handler_add_note(
@@ -150,7 +255,7 @@ async fn handler_add_note(
         })
     }
 
-    let mut db = appstate.db.lock().unwrap();
+    let mut db_guarded = appstate.db.lock().unwrap();
 
     let mut expires_after = header_to_u32(headers.get(X_EXPIRES_AFTER))?;
     expires_after = expires_after.max(appstate.config.min_expires_after);
@@ -169,10 +274,7 @@ async fn handler_add_note(
         expires_after,
         remaining_views,
     };
-    let note_memory_usage = ByteSize(content.note_memory_usage() as u64);
-    let note_id = db.add_note(content).map_err(into_bad_request)?;
-    let db_memory_usage = ByteSize(db.memory_usage() as u64);
-    println!("new  note {}, sum = {}", note_memory_usage, db_memory_usage);
+    let note_id = db_guarded.add_note(content).map_err(into_bad_request)?;
     Ok(note_id.to_string())
 }
 
@@ -186,27 +288,27 @@ async fn handler_read_note(
             None => "-1".to_string(),
         }
     }
-    let mut db = appstate.db.lock().unwrap();
+    let mut db_guarded = appstate.db.lock().unwrap();
     let note_id: NoteId = note_id.parse().map_err(into_bad_request)?;
-    match db.read_note(note_id) {
-        Some(content) => {
-            let note_memory_usage = ByteSize(content.note_memory_usage() as u64);
-            let db_memory_usage = ByteSize(db.memory_usage() as u64);
-            println!(
-                "read note {}, sum = {} {}",
-                note_memory_usage,
-                db_memory_usage,
-                if content.expired() { "(expired)" } else { "" }
-            );
-            Ok((
-                [
-                    ("content-type", "application/octet-stream".to_string()),
-                    (X_EXPIRES_AFTER, header_value(content.expires_after)),
-                    (X_REMAINING_VIEWS, header_value(content.remaining_views)),
-                ],
-                content.data,
-            ))
-        }
+    match db_guarded.read_note(note_id) {
+        Some(content) => Ok((
+            [
+                ("content-type", "application/octet-stream".to_string()),
+                (X_EXPIRES_AFTER, header_value(content.expires_after)),
+                (X_REMAINING_VIEWS, header_value(content.remaining_views)),
+            ],
+            content.data,
+        )),
         None => Err((StatusCode::NOT_FOUND, "note_id not found".to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn example_config_content() {
+        let _config: ConfigFile = toml::from_slice(&EXAMPLE_CONFIG).unwrap();
     }
 }

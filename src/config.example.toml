@@ -1,0 +1,49 @@
+## Server settings
+[server_settings]
+# Listen address
+host = "0.0.0.0"
+# Listen port
+port = 3000
+# Minimal number of views before this note is removed
+min_remaining_views = 1
+# Maximal number of views before this note is removed, 0 for no limits
+max_remaining_views = 0
+# Minimal duration before this note is removed
+min_expires_after = "0s"
+# Maximal duration before this note is removed, 0s for no limits
+max_expires_after = "5d"
+
+## Memory Configuration
+# Notes are put into the slot with the lowest `max_note_size` that let it fit
+# This allow for big notes to not force small notes reclamation for memory.
+# Reclamation for memory inside a slot is always done from oldest to newest.
+
+# Up to 4000 tiny notes
+[[server_settings.slots]]
+max_note_size = "256.0 KB"
+max_memory_usage = "256.0 MB"
+
+# Up to 512 small notes
+[[server_settings.slots]]
+max_note_size = "1.0 MB"
+max_memory_usage = "512.0 MB"
+
+# For big notes
+[[server_settings.slots]]
+max_note_size = "128.0 MB"
+max_memory_usage = "1.0 GB"
+
+
+## Client side settings Configuration
+# Note: a rogue client might push a note that doesn't respect any setting or be corrupt
+#       because the server can't enforce anything about the content of the note
+#       beside its size and expiration event
+[client_settings]
+
+# Maximum number of files, 0 means no file allowed
+max_files = 5
+# Duration before this note is removed, 0s for never
+default_expires_after = "1d"
+# Number of views before this note is removed, 0 for never
+default_remaining_views = 1
+
