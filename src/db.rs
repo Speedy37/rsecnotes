@@ -114,7 +114,7 @@ struct DatabaseSlot {
 #[derive(Debug, Clone, Copy)]
 struct DatabaseSlotIdx(pub usize);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DatabaseInner {
     notes_by_id: HashMap<NoteId, (DatabaseSlotIdx, NoteCreatedAt, NoteContent)>,
     /// Note ids sorted by expiration order
@@ -140,26 +140,25 @@ pub struct DatabaseSlotStats {
 
 impl Database {
     pub fn new(slots: &[ConfigFileSlot]) -> Self {
-        Self {
-            inner: DatabaseInner {
-                notes_by_id: Default::default(),
-                expiring_notes: Default::default(),
-            },
-            slots: slots
-                .iter()
-                .map(|slot| DatabaseSlot {
-                    notes: Default::default(),
-                    stats: DatabaseSlotStats {
-                        memory_usage: Size { bytes: 0 },
-                        max_note_size: Size {
-                            bytes: slot.max_note_size.bytes,
-                        },
-                        max_memory_usage: Size {
-                            bytes: slot.max_memory_usage.bytes,
-                        },
+        let mut slots: Vec<_> = slots
+            .iter()
+            .map(|slot| DatabaseSlot {
+                notes: Default::default(),
+                stats: DatabaseSlotStats {
+                    memory_usage: Size { bytes: 0 },
+                    max_note_size: Size {
+                        bytes: slot.max_note_size.bytes,
                     },
-                })
-                .collect(),
+                    max_memory_usage: Size {
+                        bytes: slot.max_memory_usage.bytes,
+                    },
+                },
+            })
+            .collect();
+        slots.sort_by_key(|slot| slot.stats.max_note_size);
+        Self {
+            inner: DatabaseInner::default(),
+            slots,
         }
     }
 
