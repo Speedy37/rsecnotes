@@ -179,7 +179,7 @@ async function _decodev1(buffer: ArrayBuffer) {
 		pos += 4;
 		if (data_dv.byteLength < pos)
 			throw new Error(`read_u32le plain_note_len(${data_dv.byteLength}) < ${pos}`);
-		return data_dv.getUint32(start, true);
+		return data_dv.getUint32(start, true); // 0..=u32::MAX
 	};
 	const read_u64le = () => {
 		const start = pos;
@@ -189,7 +189,7 @@ async function _decodev1(buffer: ArrayBuffer) {
 		const v = data_dv.getBigUint64(start, true);
 		if (v > Number.MAX_SAFE_INTEGER)
 			throw new Error(`cannot safely decode from u64le, ${v} > Number.MAX_SAFE_INTEGER`);
-		return Number(v);
+		return Number(v); // 0..=u64::MAX_SAFE_INTEGER
 	};
 	const read_utf8 = (len: number) => {
 		const start = pos;
@@ -208,8 +208,11 @@ async function _decodev1(buffer: ArrayBuffer) {
 		const name_len = read_u32le();
 		const file_name = read_utf8(name_len);
 		const file_size = read_u64le();
-		const file_data = data_u8.subarray(pos, pos + file_size);
+		const start = pos;
 		pos += file_size;
+		if (data_u8.byteLength < pos)
+			throw new Error(`read_file plain_note_len(${data_u8.byteLength}) < ${pos}`);
+		const file_data = data_u8.subarray(start, pos);
 		files.push({ name: file_name, data: file_data });
 	}
 
