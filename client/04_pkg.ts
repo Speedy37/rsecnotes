@@ -19,7 +19,7 @@ async function _importAesGcmKey(rawKey: Uint8Array<ArrayBuffer>): Promise<Crypto
 const _VERSION_1 = 1;
 const _V1_HEADER_LEN = 1 /* version */ + 12; /* iv*/
 const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4 /* pwd len */ + 4; /* files len */
-const _V1_FILE_HEADER_LEN = 4 /* name len */ + 4; /* file len */
+const _V1_FILE_HEADER_LEN = 4 /* name len */ + 8; /* file len */
 
 function _utf8_len(s: string): number {
 	return new TextEncoder().encode(s).byteLength;
@@ -123,6 +123,8 @@ class Pkg {
 				pos += value.byteLength;
 			}
 		}
+		if (pos != buffer.byteLength)
+			throw new Error(`ASSERT(${pos} == ${buffer.byteLength}) failed`);
 
 		return data_u8;
 	}
@@ -215,6 +217,8 @@ async function _decodev1(buffer: ArrayBuffer) {
 		const file_data = data_u8.subarray(start, pos);
 		files.push({ name: file_name, data: file_data });
 	}
+	if (pos != buffer.byteLength)
+		throw new Error(`ASSERT(${pos} == ${buffer.byteLength}) failed`);
 
 	return { text, pwd, files };
 }
