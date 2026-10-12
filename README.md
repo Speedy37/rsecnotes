@@ -57,7 +57,8 @@ cargo build
 ### How to iterate
 
 ```sh
-cargo watch -x run
+cargo install cargo-watch --locked
+cargo watch -x "run -- run --config ./src/config.example.toml"
 ```
 
 ## Internals
