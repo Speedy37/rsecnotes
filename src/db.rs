@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
@@ -8,6 +9,7 @@ use base64::Engine;
 use rand::Rng;
 
 use crate::ConfigFileSlot;
+use crate::filestore::{FileStore, NoteFile};
 use crate::util::Size;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,34 +47,50 @@ impl NoteId {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum NoteData {
+    Memory(Bytes),
+    /// File is removed once the last reference is dropped
+    File(Arc<NoteFile>),
+}
+
+impl NoteData {
+    pub fn len(&self) -> usize {
+        match self {
+            NoteData::Memory(data) => data.len(),
+            NoteData::File(file) => file.len(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct NoteContent {
-    pub data: Bytes,
+    pub data: NoteData,
     /// Number of seconds before this note is removed, 0 for no expiration
     pub expires_after: u32,
     /// Number of views before this note is removed, 0 for no limits
     pub remaining_views: u32,
 }
 
-const fn note_memory_usage(data: &Bytes) -> Size {
+const fn note_memory_usage(data_len: usize) -> Size {
     const NOTE_BASE_MEMORY_USAGE: usize = size_of::<NoteId>() * 3
         + size_of::<NoteCreatedAt>() * 2
         + size_of::<NoteExpireAt>()
         + size_of::<NoteContent>();
     Size {
-        bytes: data.len() + NOTE_BASE_MEMORY_USAGE,
+        bytes: data_len + NOTE_BASE_MEMORY_USAGE,
     }
 }
 
 impl NoteContent {
-    pub const fn note_memory_usage(&self) -> Size {
-        note_memory_usage(&self.data)
+    pub fn note_memory_usage(&self) -> Size {
+        note_memory_usage(self.data.len())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct NoteReadContent {
-    pub data: Bytes,
+    pub data: NoteData,
     /// Number of seconds before this note is removed
     pub expires_after: Option<u32>,
     /// Number of views before this note is removed
@@ -80,8 +98,8 @@ pub struct NoteReadContent {
 }
 
 impl NoteReadContent {
-    pub const fn note_memory_usage(&self) -> Size {
-        note_memory_usage(&self.data)
+    pub fn note_memory_usage(&self) -> Size {
+        note_memory_usage(self.data.len())
     }
 }
 
@@ -107,6 +125,8 @@ struct DatabaseSlot {
     /// Notes (created_at, instant) sorted by created_at order
     notes: VecDeque<(NoteCreatedAt, NoteId)>,
     stats: DatabaseSlotStats,
+    /// Notes are stored encrypted in files instead of memory
+    file_store: Option<Arc<FileStore>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -137,27 +157,44 @@ pub struct DatabaseSlotStats {
 }
 
 impl Database {
-    pub fn new(slots: &[ConfigFileSlot]) -> Self {
+    pub fn new(slots: &[ConfigFileSlot]) -> std::io::Result<Self> {
         let mut slots: Vec<_> = slots
             .iter()
-            .map(|slot| DatabaseSlot {
-                notes: Default::default(),
-                stats: DatabaseSlotStats {
-                    memory_usage: Size { bytes: 0 },
-                    max_note_size: Size {
-                        bytes: slot.max_note_size.bytes,
+            .map(|slot| -> std::io::Result<_> {
+                Ok(DatabaseSlot {
+                    notes: Default::default(),
+                    stats: DatabaseSlotStats {
+                        memory_usage: Size { bytes: 0 },
+                        max_note_size: Size {
+                            bytes: slot.max_note_size.bytes,
+                        },
+                        max_memory_usage: Size {
+                            bytes: slot.max_memory_usage.bytes,
+                        },
                     },
-                    max_memory_usage: Size {
-                        bytes: slot.max_memory_usage.bytes,
+                    file_store: match &slot.directory {
+                        Some(directory) => Some(FileStore::new(directory)?),
+                        None => None,
                     },
-                },
+                })
             })
-            .collect();
+            .collect::<std::io::Result<_>>()?;
         slots.sort_by_key(|slot| slot.stats.max_note_size);
-        Self {
+        Ok(Self {
             inner: DatabaseInner::default(),
             slots,
-        }
+        })
+    }
+
+    /// File store of the slot a note of `data_len` bytes would go to, None if stored in memory
+    pub fn file_store(
+        &mut self,
+        data_len: usize,
+    ) -> Result<Option<Arc<FileStore>>, &'static str> {
+        let note_memory_usage = note_memory_usage(data_len);
+        let (_slot_idx, slot) =
+            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or("note too big")?;
+        Ok(slot.file_store.clone())
     }
 
     fn slot_mut(

@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
-    body::Bytes,
-    extract::{ConnectInfo, DefaultBodyLimit, Path, State},
+    body::Body,
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, HeaderName, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -12,11 +12,13 @@ use std::{
     fs::{self},
     io::Write,
     net::{IpAddr, SocketAddr},
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 mod db;
+mod filestore;
 mod ratelimit;
 mod util;
 use db::*;
@@ -114,8 +116,11 @@ struct ConfigFileClient {
 struct ConfigFileSlot {
     /// Maximum final size of a note in bytes (after encryption and packaging)
     pub max_note_size: Size,
-    /// Maximum memory usage in bytes of this slot
+    /// Maximum memory usage in bytes of this slot (disk usage if `directory` is set)
     pub max_memory_usage: Size,
+    /// Store notes of this slot in this directory instead of memory,
+    /// encrypted with a key generated at startup. Notes from a previous run are removed.
+    pub directory: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -198,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
-    let db = Database::new(&config.server_settings.slots);
+    let db = Database::new(&config.server_settings.slots)?;
     let max_note_size = db.max_note_size();
     let (rate_limiter, client_ip_header) = match &config.server_settings.rate_limit {
         Some(rate_limit) => {
@@ -248,7 +253,6 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         .route("/config", get(handler_config))
         .route("/notes", post(handler_add_note))
         .route("/notes/{note_id}", get(handler_read_note))
-        .layer(DefaultBodyLimit::max(max_note_size.bytes))
         .with_state(appstate.clone());
 
     let listener = tokio::net::TcpListener::bind((
@@ -313,32 +317,39 @@ async fn handler_add_note(
     State(appstate): State<Arc<AppState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    data: Bytes,
+    body: Body,
 ) -> Response {
-    if let Some(rate_limiter) = &appstate.rate_limiter {
-        let ip = client_ip(&appstate, peer, &headers);
-        let acquired = rate_limiter
-            .lock()
-            .unwrap()
-            .try_acquire(ip, data.len(), Instant::now());
-        if let Err(retry_after) = acquired {
-            let retry_after = retry_after.as_secs_f64().ceil().to_string();
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                [(header::RETRY_AFTER, retry_after)],
-                "too many notes created, retry later",
-            )
-                .into_response();
-        }
+    match add_note(&appstate, peer, &headers, body).await {
+        Ok(note_id) => note_id.into_response(),
+        Err(err) => err,
     }
-    add_note(&appstate, &headers, data).into_response()
 }
 
-fn add_note(
-    appstate: &AppState,
-    headers: &HeaderMap,
-    data: Bytes,
-) -> Result<String, (StatusCode, String)> {
+fn into_internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
+    eprintln!("internal error: {e}");
+    (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string())
+}
+
+/// Note length from the required content-length header, the body must match it exactly
+fn declared_len(appstate: &AppState, headers: &HeaderMap) -> Result<usize, (StatusCode, String)> {
+    let len: usize = headers
+        .get(header::CONTENT_LENGTH)
+        .ok_or((
+            StatusCode::LENGTH_REQUIRED,
+            "content-length required".to_string(),
+        ))?
+        .to_str()
+        .map_err(into_bad_request)?
+        .parse()
+        .map_err(into_bad_request)?;
+    if len > appstate.config.max_note_size {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "note too big".to_string()));
+    }
+    Ok(len)
+}
+
+/// Note `(expires_after, remaining_views)` from headers, clamped to the server limits
+fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32), (StatusCode, String)> {
     fn header_to_u32(h: Option<&header::HeaderValue>) -> Result<u32, (StatusCode, String)> {
         Ok(match h {
             Some(v) => v
@@ -349,8 +360,6 @@ fn add_note(
             None => 0u32,
         })
     }
-
-    let mut db_guarded = appstate.db.lock().unwrap();
 
     let mut expires_after = header_to_u32(headers.get(X_EXPIRES_AFTER))?;
     expires_after = expires_after.max(appstate.config.min_expires_after);
@@ -363,14 +372,88 @@ fn add_note(
     if appstate.config.max_remaining_views > 0 {
         remaining_views = remaining_views.min(appstate.config.max_remaining_views);
     }
+    Ok((expires_after, remaining_views))
+}
 
+/// Everything is checked before receiving the body
+async fn add_note(
+    appstate: &AppState,
+    peer: SocketAddr,
+    headers: &HeaderMap,
+    body: Body,
+) -> Result<String, Response> {
+    let len = declared_len(appstate, headers).map_err(IntoResponse::into_response)?;
+    let (expires_after, remaining_views) =
+        note_settings(appstate, headers).map_err(IntoResponse::into_response)?;
+    if let Some(rate_limiter) = &appstate.rate_limiter {
+        let ip = client_ip(appstate, peer, headers);
+        let acquired = rate_limiter
+            .lock()
+            .unwrap()
+            .try_acquire(ip, len, Instant::now());
+        if let Err(retry_after) = acquired {
+            let retry_after = retry_after.as_secs_f64().ceil().to_string();
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, retry_after)],
+                "too many notes created, retry later",
+            )
+                .into_response());
+        }
+    }
+    let data = receive_note_data(appstate, len, body)
+        .await
+        .map_err(IntoResponse::into_response)?;
     let content = NoteContent {
         data,
         expires_after,
         remaining_views,
     };
-    let note_id = db_guarded.add_note(content).map_err(into_bad_request)?;
+    let note_id = appstate
+        .db
+        .lock()
+        .unwrap()
+        .add_note(content)
+        .map_err(|err| into_bad_request(err).into_response())?;
     Ok(note_id.as_string())
+}
+
+/// Receive the `len` bytes body in memory, or stream it encrypted to a file if its slot is
+/// file backed, outside of the database lock
+async fn receive_note_data(
+    appstate: &AppState,
+    len: usize,
+    body: Body,
+) -> Result<NoteData, (StatusCode, String)> {
+    let file_store = appstate
+        .db
+        .lock()
+        .unwrap()
+        .file_store(len)
+        .map_err(into_bad_request)?;
+    match file_store {
+        Some(file_store) => {
+            let file = file_store
+                .write(len, body.into_data_stream())
+                .await
+                .map_err(|err| match err.kind() {
+                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::ConnectionAborted => {
+                        into_bad_request(err)
+                    }
+                    _ => into_internal_error(err),
+                })?;
+            Ok(NoteData::File(Arc::new(file)))
+        }
+        None => {
+            let data = axum::body::to_bytes(body, len)
+                .await
+                .map_err(into_bad_request)?;
+            if data.len() != len {
+                return Err(into_bad_request("note is shorter than declared"));
+            }
+            Ok(NoteData::Memory(data))
+        }
+    }
 }
 
 async fn handler_read_note(
@@ -383,19 +466,28 @@ async fn handler_read_note(
             None => "-1".to_string(),
         }
     }
-    let mut db_guarded = appstate.db.lock().unwrap();
     let note_id: NoteId = note_id.parse().map_err(into_bad_request)?;
-    match db_guarded.read_note(note_id) {
-        Some(content) => Ok((
-            [
-                ("content-type", "application/octet-stream".to_string()),
-                (X_EXPIRES_AFTER, header_value(content.expires_after)),
-                (X_REMAINING_VIEWS, header_value(content.remaining_views)),
-            ],
-            content.data,
-        )),
-        None => Err((StatusCode::NOT_FOUND, "note_id not found".to_string())),
-    }
+    let content = appstate
+        .db
+        .lock()
+        .unwrap()
+        .read_note(note_id)
+        .ok_or((StatusCode::NOT_FOUND, "note_id not found".to_string()))?;
+    let len = content.data.len();
+    let body = match content.data {
+        NoteData::Memory(data) => Body::from(data),
+        // the file is kept until fully read, even if the note is removed meanwhile
+        NoteData::File(file) => Body::from_stream(file.read().await.map_err(into_internal_error)?),
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_LENGTH, len.to_string()),
+            (HeaderName::from_static(X_EXPIRES_AFTER), header_value(content.expires_after)),
+            (HeaderName::from_static(X_REMAINING_VIEWS), header_value(content.remaining_views)),
+        ],
+        body,
+    ))
 }
 
 #[cfg(test)]

@@ -32,6 +32,10 @@ max_memory_usage = "512.0 MB"
 [[server_settings.slots]]
 max_note_size = "128.0 MB"
 max_memory_usage = "1.0 GB"
+# Store notes of this slot in this directory instead of memory, `max_memory_usage` is then disk usage.
+# Notes are encrypted with a key generated at startup and only kept in memory,
+# `.note` files left by a previous run are unreadable and removed at startup.
+# directory = "notes"
 
 ## Rate limiting
 # Per client limits on notes creation, remove this section for no limits.
