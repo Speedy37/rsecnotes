@@ -40,33 +40,41 @@ impl FromStr for Duration {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut seconds = 0;
+        const OVERFLOW: &str = "invalid duration, overflow";
+        let mut seconds: u32 = 0;
         let mut it = s
             .as_bytes()
             .trim_ascii()
             .chunk_by(|a, b| a.is_ascii_digit() == b.is_ascii_digit());
         let mut did_loop = false;
         loop {
-            let digits = it.next();
-            let digits = digits.and_then(|digits| {
-                digits
-                    .iter()
-                    .copied()
-                    .take_while(u8::is_ascii_digit)
-                    .map(|digit| u32::from(digit - b'0'))
-                    .reduce(|acc, digit| acc * 10 + digit)
-            });
+            let digits = match it.next() {
+                // chunks are non empty and either all digits or all non digits
+                Some(digits) if digits[0].is_ascii_digit() => Some(
+                    digits
+                        .iter()
+                        .try_fold(0u32, |acc, &digit| {
+                            acc.checked_mul(10)?.checked_add(u32::from(digit - b'0'))
+                        })
+                        .ok_or(OVERFLOW)?,
+                ),
+                _ => None,
+            };
             let unit = it.next().map(|unit| unit.trim_ascii());
-            match (digits, unit) {
-                (Some(digits), Some(b"d")) => seconds += digits * 86400,
-                (Some(digits), Some(b"h")) => seconds += digits * 3600,
-                (Some(digits), Some(b"m")) => seconds += digits * 60,
-                (Some(digits), Some(b"s")) => seconds += digits,
+            let (digits, unit_seconds) = match (digits, unit) {
+                (Some(digits), Some(b"d")) => (digits, 86400),
+                (Some(digits), Some(b"h")) => (digits, 3600),
+                (Some(digits), Some(b"m")) => (digits, 60),
+                (Some(digits), Some(b"s")) => (digits, 1),
                 (Some(_), _) => return Err("invalid duration, 'd', 'h', 'm' or 's' expected"),
                 (None, Some(_)) => return Err("invalid duration, <digits> expected"),
                 (None, None) if !did_loop => return Err("invalid duration, <digits> expected"),
                 (None, None) => return Ok(Duration { seconds }),
-            }
+            };
+            seconds = digits
+                .checked_mul(unit_seconds)
+                .and_then(|s| seconds.checked_add(s))
+                .ok_or(OVERFLOW)?;
             did_loop = true;
         }
     }
@@ -176,7 +184,7 @@ impl FromStr for Size {
         };
         let digits = digits * mult;
         const MAX: f64 = usize::MAX as f64;
-        let bytes = match digits * mult {
+        let bytes = match digits {
             0f64..=MAX => digits as usize,
             _ => return Err("invalid size, overflow"),
         };
@@ -260,6 +268,19 @@ mod tests {
             Duration::from_str("1dm"),
             Err("invalid duration, 'd', 'h', 'm' or 's' expected")
         );
+        test_parse("4294967295s", "49710d 6h 28m 15s", u32::MAX);
+        assert_eq!(
+            Duration::from_str("4294967296s"),
+            Err("invalid duration, overflow")
+        );
+        assert_eq!(
+            Duration::from_str("50000d"),
+            Err("invalid duration, overflow")
+        );
+        assert_eq!(
+            Duration::from_str("4294967295s 1s"),
+            Err("invalid duration, overflow")
+        );
     }
 
     #[test]
@@ -274,6 +295,7 @@ mod tests {
         test_parse("256.0 KB", "256KB", 256 * KB);
         test_parse("1.5MB", "1.5MB", 1 * MB + 512 * KB);
         test_parse("1.5GB", "1.5GB", 1 * GB + 512 * MB);
+        test_parse("64GB", "64GB", 64 * GB);
         assert_eq!(
             Size::from_str(""),
             Err("invalid size, <digits>[.<digits>] expected")

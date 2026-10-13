@@ -33,17 +33,15 @@ impl FromStr for NoteId {
     }
 }
 
-impl ToString for NoteId {
-    fn to_string(&self) -> String {
-        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&self.id)
-    }
-}
-
 impl NoteId {
     fn generate() -> Self {
         Self {
             id: rand::rng().random(),
         }
+    }
+
+    pub fn as_string(&self) -> String {
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(self.id)
     }
 }
 
@@ -163,7 +161,7 @@ impl Database {
     }
 
     fn slot_mut(
-        slots: &mut Vec<DatabaseSlot>,
+        slots: &mut [DatabaseSlot],
         note_memory_usage: Size,
     ) -> Option<(DatabaseSlotIdx, &mut DatabaseSlot)> {
         match slots.binary_search_by_key(&note_memory_usage, |slot| slot.stats.max_note_size) {
@@ -179,7 +177,7 @@ impl Database {
 
         let note_memory_usage = content.note_memory_usage();
         let (slot_idx, slot) =
-            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or_else(|| "note too big")?;
+            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or("note too big")?;
 
         let note_id = loop {
             let id = NoteId::generate();
@@ -373,7 +371,8 @@ impl Database {
                 .slots
                 .iter()
                 .map(|slot| slot.stats.max_note_size.bytes)
-                .sum(),
+                .max()
+                .unwrap_or_default(),
         }
     }
 

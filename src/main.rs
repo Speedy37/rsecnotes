@@ -56,7 +56,7 @@ struct ConfigFileServer {
     pub host: String,
 
     /// Listen port
-    pub port: u32,
+    pub port: u16,
 
     /// Notes are put into the slot with the lowest `max_note_size` that let it fit
     /// This allow for big notes to not force small notes reclamation for memory.
@@ -156,10 +156,10 @@ async fn main() -> anyhow::Result<()> {
             let mut options = fs::OpenOptions::new();
             options.write(true);
             if force {
-                options.create_new(true);
-            } else {
                 options.create(true);
                 options.truncate(true);
+            } else {
+                options.create_new(true);
             }
             let mut file = options.open(config)?;
             file.write_all(EXAMPLE_CONFIG)?;
@@ -202,13 +202,13 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         .layer(DefaultBodyLimit::max(max_note_size.bytes))
         .with_state(appstate.clone());
 
-    let listener = tokio::net::TcpListener::bind(format!(
-        "{}:{}",
-        config.server_settings.host, config.server_settings.port
+    let listener = tokio::net::TcpListener::bind((
+        config.server_settings.host.as_str(),
+        config.server_settings.port,
     ))
     .await?;
     println!("Listening on http://{}", listener.local_addr()?);
-    println!("{:#?}", &config);
+    println!("{:#?}", config);
     tokio::try_join!(collect_expired_notes(appstate), axum::serve(listener, app))?;
     Ok(())
 }
@@ -275,7 +275,7 @@ async fn handler_add_note(
         remaining_views,
     };
     let note_id = db_guarded.add_note(content).map_err(into_bad_request)?;
-    Ok(note_id.to_string())
+    Ok(note_id.as_string())
 }
 
 async fn handler_read_note(
