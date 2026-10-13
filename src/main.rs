@@ -1,9 +1,9 @@
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
-    http::{HeaderMap, StatusCode, header},
-    response::IntoResponse,
+    extract::{ConnectInfo, DefaultBodyLimit, Path, State},
+    http::{HeaderMap, HeaderName, StatusCode, header},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use clap::Parser;
@@ -11,13 +11,16 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self},
     io::Write,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 mod db;
+mod ratelimit;
 mod util;
 use db::*;
+use ratelimit::RateLimiter;
 
 use crate::util::{Duration, Size};
 
@@ -74,6 +77,25 @@ struct ConfigFileServer {
 
     /// Maximal number of seconds before this note is removed, 0 for no limits
     pub max_expires_after: Duration,
+
+    /// Per client limits on notes creation, no limits if absent
+    pub rate_limit: Option<ConfigFileRateLimit>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ConfigFileRateLimit {
+    /// Duration over which a client budget is fully refilled
+    pub period: Duration,
+
+    /// Maximum number of notes a client can create over `period`
+    pub max_notes: u32,
+
+    /// Maximum total size of notes a client can create over `period`
+    pub max_size: Size,
+
+    /// Header containing the client IP when behind a reverse proxy (eg. "x-forwarded-for"),
+    /// its last value is used. If absent, the connection peer address is used.
+    pub client_ip_header: Option<String>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
@@ -126,6 +148,8 @@ pub struct PublicConfig {
 struct AppState {
     config: PublicConfig,
     db: Mutex<Database>,
+    rate_limiter: Option<Mutex<RateLimiter>>,
+    client_ip_header: Option<HeaderName>,
 }
 
 trait StaticFile {
@@ -176,6 +200,29 @@ async fn main() -> anyhow::Result<()> {
 async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
     let db = Database::new(&config.server_settings.slots);
     let max_note_size = db.max_note_size();
+    let (rate_limiter, client_ip_header) = match &config.server_settings.rate_limit {
+        Some(rate_limit) => {
+            anyhow::ensure!(
+                rate_limit.max_notes > 0 && rate_limit.period.seconds > 0,
+                "rate_limit: max_notes and period must be non zero"
+            );
+            anyhow::ensure!(
+                rate_limit.max_size >= max_note_size,
+                "rate_limit: max_size must be at least the biggest slot max_note_size ({max_note_size})"
+            );
+            let client_ip_header = match &rate_limit.client_ip_header {
+                Some(name) => Some(HeaderName::try_from(name.as_str())?),
+                None => None,
+            };
+            let rate_limiter = RateLimiter::new(
+                rate_limit.max_notes,
+                rate_limit.max_size.bytes,
+                std::time::Duration::from_secs(rate_limit.period.seconds.into()),
+            );
+            (Some(Mutex::new(rate_limiter)), client_ip_header)
+        }
+        None => (None, None),
+    };
     let appstate = Arc::new(AppState {
         config: PublicConfig {
             max_note_size: max_note_size.bytes,
@@ -188,6 +235,8 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             max_expires_after: config.server_settings.max_expires_after.seconds,
         },
         db: Mutex::new(db),
+        rate_limiter,
+        client_ip_header,
     });
 
     let app = Router::new()
@@ -209,7 +258,13 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
     .await?;
     println!("Listening on http://{}", listener.local_addr()?);
     println!("{:#?}", config);
-    tokio::try_join!(collect_expired_notes(appstate), axum::serve(listener, app))?;
+    tokio::try_join!(
+        collect_expired_notes(appstate),
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>()
+        )
+    )?;
     Ok(())
 }
 
@@ -219,8 +274,11 @@ async fn collect_expired_notes(appstate: Arc<AppState>) -> std::io::Result<()> {
     loop {
         interval.tick().await;
 
-        let mut db_guarded = appstate.db.lock().unwrap();
-        db_guarded.collect_expired_notes(Instant::now());
+        let now = Instant::now();
+        appstate.db.lock().unwrap().collect_expired_notes(now);
+        if let Some(rate_limiter) = &appstate.rate_limiter {
+            rate_limiter.lock().unwrap().collect_full_buckets(now);
+        }
     }
 }
 
@@ -239,11 +297,48 @@ async fn handler_config(State(appstate): State<Arc<AppState>>) -> Json<PublicCon
     Json(appstate.config.clone())
 }
 
+/// Client IP from `client_ip_header` (last value) if configured and valid, else the peer address
+fn client_ip(appstate: &AppState, peer: SocketAddr, headers: &HeaderMap) -> IpAddr {
+    appstate
+        .client_ip_header
+        .as_ref()
+        .and_then(|name| headers.get_all(name).iter().next_back())
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.rsplit(',').next())
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(peer.ip())
+}
+
 async fn handler_add_note(
     State(appstate): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     data: Bytes,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Response {
+    if let Some(rate_limiter) = &appstate.rate_limiter {
+        let ip = client_ip(&appstate, peer, &headers);
+        let acquired = rate_limiter
+            .lock()
+            .unwrap()
+            .try_acquire(ip, data.len(), Instant::now());
+        if let Err(retry_after) = acquired {
+            let retry_after = retry_after.as_secs_f64().ceil().to_string();
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, retry_after)],
+                "too many notes created, retry later",
+            )
+                .into_response();
+        }
+    }
+    add_note(&appstate, &headers, data).into_response()
+}
+
+fn add_note(
+    appstate: &AppState,
+    headers: &HeaderMap,
+    data: Bytes,
+) -> Result<String, (StatusCode, String)> {
     fn header_to_u32(h: Option<&header::HeaderValue>) -> Result<u32, (StatusCode, String)> {
         Ok(match h {
             Some(v) => v

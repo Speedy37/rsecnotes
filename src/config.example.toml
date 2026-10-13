@@ -33,6 +33,20 @@ max_memory_usage = "512.0 MB"
 max_note_size = "128.0 MB"
 max_memory_usage = "1.0 GB"
 
+## Rate limiting
+# Per client limits on notes creation, remove this section for no limits.
+# Clients are identified by their IPv4 address or their IPv6 /64 prefix.
+# A client budget is refilled continuously over `period`.
+[server_settings.rate_limit]
+period = "1h"
+# Maximum number of notes a client can create over `period`
+max_notes = 30
+# Maximum total size of notes a client can create over `period`,
+# must be at least the biggest slot `max_note_size`
+max_size = "256.0 MB"
+# Header containing the client IP when behind a reverse proxy, its last value is used.
+# Only set it if the proxy always sets it, otherwise clients can spoof their IP.
+# client_ip_header = "x-forwarded-for"
 
 ## Client side settings Configuration
 # Note: a rogue client might push a note that doesn't respect any setting or be corrupt
