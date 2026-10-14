@@ -517,7 +517,7 @@ function render_pwd_input(pwd: string, onchange: (pwd: string) => void) {
 	// Zero width space keeps the line height when empty
 	const render_view = () => view.replaceChildren(...render_pwd_view(input.value), "​");
 	render_view();
-	return <div id="input_pwd_typed_block">
+	return <div id="input_pwd_typed_block" className="pwd-row">
 		<div className="pwd-typed">{view}{input}</div>
 		{render_copy(() => input.value)}
 	</div>;
@@ -608,11 +608,11 @@ function render_pwd(onchange: (pwd: string) => void) {
 		{...render_pwd_opt("numbers")}
 		{...render_pwd_opt("symbols")}
 		{...render_pwd_opt("remains")}
-		{input_pwd_view = <div className="pwd" />}
-		<div className="pwd-actions">
+		<div className="pwd-row">
+			{input_pwd_view = <div className="pwd" />}
 			{render_copy(() => input_pwd_view.textContent)}
-			<button className="refresh" onclick={fix_limits} title={tr(i18n.RegenerateTooltip)}>{render_refresh_svg()}</button>
 		</div>
+		<button className="refresh" onclick={fix_limits} title={tr(i18n.RegenerateTooltip)}>{render_refresh_svg()}</button>
 	</div>;
 	fix_limits();
 	return ret;
