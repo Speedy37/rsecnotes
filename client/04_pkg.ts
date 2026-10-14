@@ -1,4 +1,3 @@
-
 async function _generateAesGcmKey(): Promise<{
 	keyObj: CryptoKey;
 	rawKey: Uint8Array;
@@ -16,10 +15,27 @@ async function _importAesGcmKey(rawKey: Uint8Array<ArrayBuffer>): Promise<Crypto
 	return await crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, false, ["decrypt"]);
 }
 
+/// Data is followed by zeros up to the padded length, to hide the content length from the server
 const _VERSION_1 = 1;
 const _V1_HEADER_LEN = 1 /* version */ + 12; /* iv*/
 const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4 /* pwd len */ + 4; /* files len */
 const _V1_FILE_HEADER_LEN = 4 /* name len */ + 8; /* file len */
+const _GCM_TAG_LEN = 16;
+/// Small notes (eg. only a password) are all padded to this length
+const _V1_MIN_DATA_LEN = 128;
+/// Below this length, padding is to the next power of two (at most 2x, a few hundred bytes)
+const _V1_POW2_MAX_DATA_LEN = 1024;
+
+/// Padded length: the minimum, then powers of two (128, 256, 512, 1024),
+/// then Padmé (https://lbarman.ch/blog/padme/) that leaks O(log log len) bits of the length, at most ~12% overhead
+function _pad_len(len: number): number {
+	len = Math.max(len, _V1_MIN_DATA_LEN);
+	if (len <= _V1_POW2_MAX_DATA_LEN) return 2 ** Math.ceil(Math.log2(len));
+	const e = Math.floor(Math.log2(len));
+	const s = Math.floor(Math.log2(e)) + 1;
+	const step = 2 ** (e - s);
+	return Math.ceil(len / step) * step;
+}
 
 function _utf8_len(s: string): number {
 	return new TextEncoder().encode(s).byteLength;
@@ -64,7 +80,7 @@ class Pkg {
 		if (this._text_len === null) this._text_len = _utf8_len(this._text);
 		return this._text_len;
 	}
-	
+
 	get pwd(): string {
 		return this._pwd;
 	}
@@ -77,8 +93,24 @@ class Pkg {
 		return this._pwd_len;
 	}
 
+	/// Maximum final size of a note, 0 for no limits, padding is reduced to stay below it
+	max_total_len: number = 0;
+
+	private get data_len(): number {
+		return _V1_DATA_HEADER_LEN + this.text_len + this.pwd_len + this._file_len;
+	}
+
+	private get padded_data_len(): number {
+		const data_len = this.data_len;
+		let padded = _pad_len(data_len);
+		if (this.max_total_len > 0)
+			padded = Math.min(padded, this.max_total_len - _V1_HEADER_LEN - _GCM_TAG_LEN);
+		return Math.max(padded, data_len);
+	}
+
+	/// Final size of the note (after padding, encryption and packaging)
 	get total_len(): number {
-		return _V1_HEADER_LEN + _V1_DATA_HEADER_LEN + this.text_len + this.pwd_len + this._file_len;
+		return _V1_HEADER_LEN + this.padded_data_len + _GCM_TAG_LEN;
 	}
 
 	get empty(): boolean {
@@ -86,12 +118,13 @@ class Pkg {
 	}
 
 	async encode(): Promise<Uint8Array<ArrayBuffer>> {
-		const buffer = new ArrayBuffer(this.total_len);
+		// Zero initialized, the padding is what is left after the data
+		const buffer = new ArrayBuffer(this.padded_data_len);
 		const data_u8 = new Uint8Array(buffer);
 		const data_dv = new DataView(buffer);
 		let pos = 0;
 		const write_u32le = (v: number) => {
-			if (v > 0xFFFF_FFFF)
+			if (v > 0xffff_ffff)
 				throw new Error(`cannot safely encode to u32le, ${v} > 0xFFFF_FFFF`);
 			data_dv.setUint32(pos, v, true);
 			pos += 4;
@@ -123,8 +156,8 @@ class Pkg {
 				pos += value.byteLength;
 			}
 		}
-		if (pos != buffer.byteLength)
-			throw new Error(`ASSERT(${pos} == ${buffer.byteLength}) failed`);
+		if (pos != this.data_len)
+			throw new Error(`ASSERT(${pos} == ${this.data_len}) failed`);
 
 		return data_u8;
 	}
@@ -150,7 +183,11 @@ class Pkg {
 	}
 }
 
-type DecryptedNote = { text: string; pwd: string; files: { name: string; data: Uint8Array<ArrayBuffer> }[] };
+type DecryptedNote = {
+	text: string;
+	pwd: string;
+	files: { name: string; data: Uint8Array<ArrayBuffer> }[];
+};
 async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNote> {
 	const data_u8 = new Uint8Array(buffer);
 	const version = data_u8[0];
@@ -159,13 +196,13 @@ async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNo
 			throw new Error(
 				`raw_note_len(${data_u8.byteLength}) < V1_HEADER_LEN(${_V1_HEADER_LEN})`,
 			);
-		let iv = data_u8.subarray(1, 1 + 12);
+		let iv = data_u8.subarray(1, _V1_HEADER_LEN);
 		let rawkey = base64urlDecode(keyb64);
 		let key = await _importAesGcmKey(rawkey);
 		const decrypted_data = await crypto.subtle.decrypt(
 			{ name: "AES-GCM", iv },
 			key,
-			data_u8.subarray(13),
+			data_u8.subarray(_V1_HEADER_LEN),
 		);
 		return _decodev1(decrypted_data);
 	}
@@ -217,8 +254,7 @@ async function _decodev1(buffer: ArrayBuffer) {
 		const file_data = data_u8.subarray(start, pos);
 		files.push({ name: file_name, data: file_data });
 	}
-	if (pos != buffer.byteLength)
-		throw new Error(`ASSERT(${pos} == ${buffer.byteLength}) failed`);
+	if (data_u8.subarray(pos).some((b) => b !== 0)) throw new Error(`invalid padding after ${pos}`);
 
 	return { text, pwd, files };
 }

@@ -184,6 +184,7 @@ let server_config = {
 
 function render_new_note() {
 	const pkg = new Pkg();
+	pkg.max_total_len = server_config.max_note_size;
 	function addFiles(files: FileList | null | undefined) {
 		if (!files) return;
 		for (const file of files) {
