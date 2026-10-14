@@ -653,6 +653,15 @@ fieldset > .list {
 #about h3 {
 	margin-bottom: 0;
 }
+/* Right under the title */
+#about h2 {
+	margin-bottom: 0;
+}
+#about .version {
+	margin-top: 0;
+	font-size: 0.9rem;
+	color: color-mix(in srgb, var(--text-color) 65%, var(--bg-color));
+}
 #about li + li {
 	margin-top: 0.5rem;
 }

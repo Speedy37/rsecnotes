@@ -208,6 +208,9 @@ let server_config = {
 
 	/// Notes bigger than this (after encryption and packaging) require a TOTP code, none if null
 	max_note_size_without_totp: null as number | null,
+
+	/// Server version, shown in the about dialog
+	version: "",
 };
 
 function render_new_note() {
@@ -769,6 +772,7 @@ function render_about() {
 	}}>
 		<div>
 			<h2>{tr(i18n.About_title)}</h2>
+			{server_config.version ? <p className="version">{`v${server_config.version}`}</p> : ""}
 			{tr(i18n.about_desc_jsx)()}
 			<h3>{tr(i18n.How_it_works)}</h3>
 			<ol>{...tr(i18n.about_steps).map((step) => <li>{step}</li>)}</ol>

@@ -167,7 +167,7 @@ struct ConfigFileSlot {
     pub directory: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PublicConfig {
     /// Maximum final size of a note in bytes (after encryption and packaging), server enforced
     pub max_note_size: usize,
@@ -198,6 +198,9 @@ pub struct PublicConfig {
 
     /// Notes bigger than this require a TOTP code, none if absent, server enforced
     pub max_note_size_without_totp: Option<usize>,
+
+    /// Server version, shown in the about dialog
+    pub version: &'static str,
 }
 
 struct Logo {
@@ -333,6 +336,7 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             min_expires_after,
             max_expires_after,
             max_note_size_without_totp: max_note_size_without_totp.map(|size| size.bytes),
+            version: env!("CARGO_PKG_VERSION"),
         },
         logo,
         db: Mutex::new(db),

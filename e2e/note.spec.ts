@@ -136,6 +136,14 @@ test("serves the page with a strict CSP", async ({ person }) => {
 	await expect(page.locator("#input_filelist")).toBeHidden();
 });
 
+test("about shows the version", async ({ person }) => {
+	const { page } = await person();
+	await page.goto("/");
+	await page.locator("#input_note").waitFor();
+	await page.getByRole("button", { name: "About" }).click();
+	await expect(page.locator("#about .version")).toHaveText(/^v\d+\.\d+\.\d+/);
+});
+
 test("text note is readable once, then destroyed", async ({ person }) => {
 	const text = "my secret text 🔐";
 	const sender = await person();
