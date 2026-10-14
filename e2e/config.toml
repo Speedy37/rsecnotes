@@ -1,0 +1,20 @@
+# Server configuration used by the Playwright tests, see playwright.config.ts
+[server_settings]
+host = "127.0.0.1"
+port = 3100
+min_remaining_views = 1
+# No maximum: notes without a views limit allowed
+max_remaining_views = 0
+min_expires_after = "1m"
+max_expires_after = "1d"
+
+[[server_settings.slots]]
+max_note_size = "1.0 MB"
+max_memory_usage = "64.0 MB"
+
+# No rate_limit section: every test creates notes from the same address
+
+[client_settings]
+max_files = 2
+default_expires_after = "1h"
+default_remaining_views = 1

@@ -12,6 +12,8 @@ yarn.lock
 /.env
 /.env.local
 /.env.*.local
+/playwright-report/
+/blob-report/
 
 # -----------------
 # Rust

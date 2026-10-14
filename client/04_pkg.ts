@@ -205,11 +205,17 @@ async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNo
 		checkKeyb64(keyb64);
 		let rawkey = base64urlDecode(keyb64);
 		let key = await _importAesGcmKey(rawkey);
-		const decrypted_data = await crypto.subtle.decrypt(
-			{ name: "AES-GCM", iv },
-			key,
-			data_u8.subarray(_V1_HEADER_LEN),
-		);
+		let decrypted_data: ArrayBuffer;
+		try {
+			decrypted_data = await crypto.subtle.decrypt(
+				{ name: "AES-GCM", iv },
+				key,
+				data_u8.subarray(_V1_HEADER_LEN),
+			);
+		} catch {
+			// A wrong key or an altered note fail the GCM tag check, with an empty OperationError message
+			throw new Error(tr(i18n.decrypt_failed));
+		}
 		return _decodev1(decrypted_data);
 	}
 	throw new Error(`unknown version ${version}`);

@@ -51,7 +51,7 @@ function render_link(note_id: string, keyb64: string) {
 			{(link_qrcode = <div id="link_qrcode"></div>)}
 		</div>
 	);
-	btn_newnote.style.display = "";
+	btn_newnote.hidden = false;
 	new QRCode(link_qrcode, {
 		text: url.href,
 		width: 512,
@@ -78,7 +78,7 @@ function render_consume(note_id: string, keyb64: string) {
 		} catch (e) {
 			consume_btn.textContent = e instanceof Error ? e.message : `${e}`;
 			consume_btn.className = "error";
-			btn_newnote.style.display = "";
+			btn_newnote.hidden = false;
 		}
 	}
 	let consume_btn: HTMLButtonElement;
@@ -155,7 +155,7 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 	read_block.append(note_block, read_settings_status = <p id="read_settings_status" />);
 
 	swap_main(read_block);
-	btn_newnote.style.display = "";
+	btn_newnote.hidden = false;
 
 
 	function render_status(remaining_views: number, expires_after: number) {
@@ -263,7 +263,7 @@ function render_new_note() {
 		}
 		let expires_after = 0;
 		if (input_expires_checkbox.checked) {
-			expires_after = Math.max(Math.floor(+input_expires_after.value) || 1, 1) * +input_expires_unit.value;
+			expires_after = Math.max(Math.floor(+input_expires_after.value) || 1, 1) * expires_unit;
 			expires_after = Math.max(expires_after, min_expires_after);
 			if (max_expires_after > 0) expires_after = Math.min(expires_after, max_expires_after);
 		}
@@ -273,8 +273,12 @@ function render_new_note() {
 	/// Inputs follow their checkbox, and the duration bounds its unit
 	function render_settings() {
 		input_remaining_views.disabled = !input_views_checkbox.checked;
-		input_expires_after.disabled = input_expires_unit.disabled = !input_expires_checkbox.checked;
-		const unit = +input_expires_unit.value;
+		input_expires_after.disabled = !input_expires_checkbox.checked;
+		for (const btn of input_expires_unit_btns) {
+			btn.disabled = !input_expires_checkbox.checked;
+			btn.classList.toggle("selected", btn.value === expires_unit.toString());
+		}
+		const unit = expires_unit;
 		input_expires_after.min = Math.max(1, Math.ceil(min_expires_after / unit)).toString();
 		input_expires_after.max = max_expires_after > 0 ? Math.max(1, Math.floor(max_expires_after / unit)).toString() : "";
 		renderNoteStatus();
@@ -282,7 +286,7 @@ function render_new_note() {
 
 	function renderFiles() {
 		if (pkg.files.length === 0) {
-			input_filelist.style.display = "none";
+			input_filelist.hidden = true;
 			return;
 		}
 
@@ -298,7 +302,7 @@ function render_new_note() {
 				}}>{tr(i18n.Remove)}</button>,
 			);
 		});
-		input_filelist.style.display = "";
+		input_filelist.hidden = false;
 	}
 
 	async function create() {
@@ -340,7 +344,9 @@ function render_new_note() {
 	let input_remaining_views: HTMLInputElement;
 	let input_expires_checkbox: HTMLInputElement;
 	let input_expires_after: HTMLInputElement;
-	let input_expires_unit: HTMLSelectElement;
+	/// A switch rather than a <select>: creating a <select> reports an inline style CSP violation in WebKit
+	let expires_unit = default_unit.secs;
+	let input_expires_unit_btns: HTMLButtonElement[] = [];
 	let input_createbtn: HTMLButtonElement;
 	let input_status: HTMLDivElement;
 	let input_settings_status: HTMLDivElement;
@@ -371,7 +377,7 @@ function render_new_note() {
 		render_pwd_panel();
 	}
 	function toggle_pwd() {
-		input_pwd_switch.style.display = input_pwd_checkbox.checked ? "" : "none";
+		input_pwd_switch.hidden = !input_pwd_checkbox.checked;
 		if (input_pwd_checkbox.checked) {
 			render_pwd_panel();
 		} else {
@@ -446,7 +452,7 @@ function render_new_note() {
 				}
 				{
 					(input_filelist = (
-						<div className="list" id="input_filelist" style="display: none;">
+						<div className="list" id="input_filelist" hidden>
 						</div>
 					))
 				}
@@ -458,7 +464,7 @@ function render_new_note() {
 						{tr(i18n.Credentials)}
 						<span>{tr(i18n.Credentials_desc)}</span>
 					</label>
-					{input_pwd_switch = <div className="switch" style="display: none;">
+					{input_pwd_switch = <div className="switch" hidden>
 						{input_pwd_generate_btn = <button className="selected" title={tr(i18n.GenerateTooltip)}
 							onclick={() => set_pwd_mode("generate")}>{tr(i18n.pwd_mode_generate)}</button>}
 						{input_pwd_manual_btn = <button
@@ -502,9 +508,13 @@ function render_new_note() {
 						type="number"
 						autocomplete="off"
 						oninput={render_settings} />}
-					{input_expires_unit = <select onchange={render_settings}>
-						{...duration_units.map((unit) => <option value={unit.secs.toString()} selected={unit === default_unit}>{tr(unit.label)}</option>)}
-					</select>}
+					<div className="switch">
+						{...(input_expires_unit_btns = duration_units.map((unit) => <button value={unit.secs.toString()}
+							onclick={() => {
+								expires_unit = unit.secs;
+								render_settings();
+							}}>{tr(unit.label)}</button>))}
+					</div>
 				</div>
 			</fieldset>
 
@@ -766,7 +776,7 @@ function render_nav() {
 	</nav>
 }
 
-const btn_newnote = <button id="btn_newnote" style="display: none;" onclick={() => {
+const btn_newnote = <button id="btn_newnote" hidden onclick={() => {
 	let url = new URL(document.location.href);
 	url.search = "";
 	url.hash = "";

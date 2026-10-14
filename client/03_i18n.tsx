@@ -309,6 +309,10 @@ const i18n = {
 		en: "Invalid link, the decryption key is malformed.",
 		fr: "Lien invalide, la clé de déchiffrement est malformée.",
 	},
+	decrypt_failed: {
+		en: "Decryption failed: the link is wrong, or the note was altered.",
+		fr: "Échec du déchiffrement : le lien est erroné, ou la note a été altérée.",
+	},
 	get_note_failed: {
 		en: "Download failed.",
 		fr: "Échec du téléchargement.",

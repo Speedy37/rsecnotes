@@ -1,7 +1,10 @@
 <h1><img src="docs/assets/title.svg" alt="rsecnotes" height="80"></h1>
 
 Share notes, files and credentials through a link. They are encrypted in your browser before being sent. Inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
-A secure sharing note and/or file(s) service, inspired by [cryptgeon](https://github.com/cupcakearmy/cryptgeon).
+
+| Create | Share | Open | Read |
+| :-: | :-: | :-: | :-: |
+| ![Create a note](docs/assets/rsecnotes_create.png) | ![Share link](docs/assets/rsecnotes_link.png) | ![Open a note](docs/assets/rsecnotes_warn.png) | ![Read a note](docs/assets/rsecnotes_read.png) |
 
 ## Features
 
@@ -55,6 +58,16 @@ cargo build --release
 cargo install cargo-watch --locked
 cargo watch -x "run -- run --config ./src/config.example.toml"
 ```
+
+### How to test
+
+```sh
+cargo test
+npx playwright install
+npm test
+```
+
+`npm test` runs the [Playwright](https://playwright.dev) end-to-end tests of [e2e/](e2e/) in Chromium, Firefox and WebKit, against a server started with [e2e/config.toml](e2e/config.toml). They check that notes can be read, then are destroyed. They also check that the key and the plaintext are never sent to the server, and that the page has no CSP violations.
 
 ## Internals
 

@@ -189,10 +189,15 @@ div.error {
 	) !important;
 }
 
+/* Elements are hidden by the hidden attribute: inline styles are blocked by the CSP,
+it must win over the display of their class (eg. .list, .switch) */
+[hidden] {
+	display: none !important;
+}
+
 button,
 textarea,
 input,
-select,
 .drop,
 .list,
 .pwd {
@@ -214,8 +219,7 @@ textarea {
 }
 
 textarea:focus-visible,
-input:focus-visible,
-select:focus-visible {
+input:focus-visible {
 	border: 1px solid var(--focus-border-color);
 }
 /* Their border does not show focus (none, or not drawn by native checkboxes and ranges),
@@ -227,8 +231,7 @@ input[type="range"]:focus-visible {
 	outline-offset: 2px;
 }
 
-button,
-select {
+button {
 	cursor: pointer;
 }
 
@@ -330,6 +333,14 @@ label > span {
 	flex: 1;
 	width: auto;
 	min-width: 0;
+}
+/* Unit switch, as high as the number */
+.duration > .switch {
+	margin: 0;
+}
+.duration > .switch > button {
+	padding: 0 0.75rem;
+	font-size: 1rem;
 }
 /* Unchecked setting (never), or forced by the server */
 #input_settings :disabled {
@@ -469,8 +480,10 @@ over it, without affecting the layout */
 .switch > button:first-child {
 	border-radius: 0.25rem 0 0 0.25rem;
 }
-.switch > button:last-child {
+.switch > button + button {
 	border-left: none;
+}
+.switch > button:last-child {
 	border-radius: 0 0.25rem 0.25rem 0;
 }
 .switch > button.selected {
