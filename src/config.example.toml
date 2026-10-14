@@ -52,6 +52,20 @@ max_size = "256.0 MB"
 # Only set it if the proxy always sets it, otherwise clients can spoof their IP.
 # client_ip_header = "x-forwarded-for"
 
+## TOTP
+# Notes bigger than `max_note_size_without_code` require a TOTP code from an authenticator app
+# at creation, uncomment this section to enable it. Generate the secret with `rsecnotes generate-totp`.
+# Codes use SHA256: authenticator apps ignoring the algorithm (always SHA1) are not supported.
+#[server_settings.totp]
+#max_note_size_without_code = "10.0 MB"
+#secret = "<base32 secret>"
+# Invalid codes allowed per client over `failures_period`
+#max_client_failures = 5
+# Invalid codes allowed from all clients over `failures_period`, against guesses from many addresses.
+# Reaching it also blocks large notes for everyone until it refills.
+#max_failures = 20
+#failures_period = "1h"
+
 ## Client side settings Configuration
 # Note: a rogue client might push a note that doesn't respect any setting or be corrupt
 #       because the server can't enforce anything about the content of the note

@@ -51,28 +51,43 @@ impl RateLimiter {
         }
     }
 
-    /// Consume one note of `bytes` from `ip` budget, or return how long to wait before retrying
-    pub fn try_acquire(&mut self, ip: IpAddr, bytes: usize, now: Instant) -> Result<(), Duration> {
-        let key = client_key(ip);
-        let mut bucket = match self.buckets.get(&key) {
+    fn bucket(&self, key: IpAddr, now: Instant) -> Bucket {
+        match self.buckets.get(&key) {
             Some(bucket) => self.refill(bucket, now),
             None => Bucket {
                 notes: self.max_notes,
                 bytes: self.max_bytes,
                 updated_at: now,
             },
-        };
-        let bytes = bytes as f64;
+        }
+    }
+
+    /// How long to wait before `bucket` holds one note of `bytes`
+    fn wait(&self, bucket: &Bucket, bytes: f64) -> Result<(), Duration> {
         if bucket.notes >= 1.0 && bucket.bytes >= bytes {
-            bucket.notes -= 1.0;
-            bucket.bytes -= bytes;
-            self.buckets.insert(key, bucket);
             Ok(())
         } else {
             let missing_notes = (1.0 - bucket.notes).max(0.0) / self.max_notes;
             let missing_bytes = (bytes - bucket.bytes).max(0.0) / self.max_bytes;
             Err(self.period.mul_f64(missing_notes.max(missing_bytes)))
         }
+    }
+
+    /// Whether `ip` budget holds one note of `bytes`, without consuming it
+    pub fn check(&self, ip: IpAddr, bytes: usize, now: Instant) -> Result<(), Duration> {
+        self.wait(&self.bucket(client_key(ip), now), bytes as f64)
+    }
+
+    /// Consume one note of `bytes` from `ip` budget, or return how long to wait before retrying
+    pub fn try_acquire(&mut self, ip: IpAddr, bytes: usize, now: Instant) -> Result<(), Duration> {
+        let key = client_key(ip);
+        let mut bucket = self.bucket(key, now);
+        let bytes = bytes as f64;
+        self.wait(&bucket, bytes)?;
+        bucket.notes -= 1.0;
+        bucket.bytes -= bytes;
+        self.buckets.insert(key, bucket);
+        Ok(())
     }
 
     /// Forget clients whose budget is fully refilled
@@ -105,6 +120,17 @@ mod tests {
         // half a period refills one note
         assert_eq!(limiter.try_acquire(ip, 0, now + HOUR / 2), Ok(()));
         assert!(limiter.try_acquire(ip, 0, now + HOUR / 2).is_err());
+    }
+
+    #[test]
+    fn check_does_not_consume() {
+        let ip: IpAddr = "1.2.3.4".parse().unwrap();
+        let now = Instant::now();
+        let mut limiter = RateLimiter::new(1, 1000, HOUR);
+        assert_eq!(limiter.check(ip, 0, now), Ok(()));
+        assert_eq!(limiter.check(ip, 0, now), Ok(()));
+        assert_eq!(limiter.try_acquire(ip, 0, now), Ok(()));
+        assert_eq!(limiter.check(ip, 0, now), Err(HOUR));
     }
 
     #[test]

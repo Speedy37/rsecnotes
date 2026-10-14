@@ -309,6 +309,26 @@ const i18n = {
 		en: "Invalid link, the decryption key is malformed.",
 		fr: "Lien invalide, la clé de déchiffrement est malformée.",
 	},
+	Totp_code: {
+		en: "TOTP code",
+		fr: "Code TOTP",
+	},
+	Totp_code_desc: {
+		en: "(required for large notes, from your authenticator app)",
+		fr: "(requis pour les notes volumineuses, depuis votre application d'authentification)",
+	},
+	totp_invalid: {
+		en: "Invalid or expired TOTP code.",
+		fr: "Code TOTP invalide ou expiré.",
+	},
+	totp_too_many_failures: {
+		en: "Too many invalid TOTP codes, retry later.",
+		fr: "Trop de codes TOTP invalides, réessayez plus tard.",
+	},
+	totp_upload_failed: {
+		en: "Upload failed: the TOTP code may be invalid or expired, or the connection was lost.",
+		fr: "Échec de l'envoi : le code TOTP est peut-être invalide ou expiré, ou la connexion a été perdue.",
+	},
 	decrypt_failed: {
 		en: "Decryption failed: the link is wrong, or the note was altered.",
 		fr: "Échec du déchiffrement : le lien est erroné, ou la note a été altérée.",

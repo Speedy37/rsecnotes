@@ -15,6 +15,7 @@ Share notes, files and credentials through a link. They are encrypted in your br
 - Notes are padded before encryption, so the server only knows their approximate size
 - Notes are stored in memory, or on disk encrypted again with a key only kept in memory, and the oldest notes are dropped when space is needed
 - Per client rate limiting of notes creation
+- Optional TOTP code (authenticator app) required to create large notes
 - Single binary server
 - Client side can be audited: no minification, no dependencies besides a QR code generator, kept simple
 - Translated in English and French
@@ -34,6 +35,7 @@ Usage: rsecnotes <COMMAND>
 Commands:
   generate-config  Generate a default configuration file
   run              Run the server
+  generate-totp    Generate a TOTP secret, required to create large notes (see `[server_settings.totp]`)
   help             Print this message or the help of the given subcommand(s)
 ```
 

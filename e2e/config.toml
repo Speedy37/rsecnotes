@@ -14,6 +14,14 @@ max_memory_usage = "64.0 MB"
 
 # No rate_limit section: every test creates notes from the same address
 
+# Test only secret, also in note.spec.ts
+[server_settings.totp]
+max_note_size_without_code = "64.0 KB"
+secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+# Every browser is the same client, and may retry an upload reset by a refused code
+max_client_failures = 20
+max_failures = 20
+
 [client_settings]
 max_files = 2
 default_expires_after = "1h"

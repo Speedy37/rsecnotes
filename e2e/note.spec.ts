@@ -1,5 +1,22 @@
 import { test as base, expect, type Browser, type BrowserContextOptions, type Page, type Request } from "@playwright/test";
+import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import * as http from "node:http";
+
+/// Secret of e2e/config.toml [server_settings.totp]
+const TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
+/// Current code of an authenticator app (RFC 6238: HMAC-SHA256, 6 digits, 30 seconds)
+function totp(secret = TOTP_SECRET, unix_secs = Date.now() / 1000) {
+	let bits = "";
+	for (const c of secret) bits += "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c).toString(2).padStart(5, "0");
+	const key = Buffer.from(bits.match(/.{8}/g)!.map((byte) => parseInt(byte, 2)));
+	const counter = Buffer.alloc(8);
+	counter.writeBigUInt64BE(BigInt(Math.floor(unix_secs / 30)));
+	const hash = createHmac("sha256", key).update(counter).digest();
+	const offset = hash[hash.length - 1] & 0xf;
+	return ((hash.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, "0");
+}
 
 /// What a browser sent to the server, as it goes on the wire (the URL fragment is never sent)
 type Sent = { method: string; target: string; headers: Record<string, string>; body: Buffer | null };
@@ -264,7 +281,55 @@ test("files", async ({ person }) => {
 	await expect_never_sent([sender, reader], [key, content.trim(), "secret.txt"]);
 });
 
-test("copy buttons", async ({ person }) => {
+test("big notes require a TOTP code", async ({ person, baseURL }) => {
+	// RFC 6238 appendix B SHA256, last 6 digits
+	expect(totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA", 59)).toBe("119246");
+
+	// The server refuses big notes without a code before receiving them: only the headers are sent
+	const big = Buffer.alloc(100 * 1024);
+	const status = await new Promise<number | undefined>((resolve, reject) => {
+		const post = http.request(`${baseURL}/notes`, { method: "POST", headers: { "content-length": big.byteLength } });
+		post.on("response", (response) => {
+			resolve(response.statusCode);
+			post.destroy();
+		});
+		post.on("error", reject);
+		post.flushHeaders();
+	});
+	expect(status).toBe(403);
+
+	const sender = await person();
+	const page = sender.page;
+	await page.goto("/");
+	await page.locator("#input_note").fill("big note");
+	const input = page.locator("#input_totp");
+	const create = page.locator("#input_createbtn");
+	await expect(input).toBeHidden();
+	await expect(create).toBeEnabled();
+
+	await page.locator("#input_file").setInputFiles({ name: "big.bin", mimeType: "application/octet-stream", buffer: big });
+	await expect(input).toBeVisible();
+	await expect(create).toBeDisabled();
+
+	const code = totp();
+	await input.fill(((+code + 1) % 1_000_000).toString().padStart(6, "0"));
+	await create.click();
+	await expect(create).toHaveClass("error");
+	await expect(create).toContainText("TOTP");
+	// A refused code is cleared
+	await expect(input).toHaveValue("");
+	await expect(create).toBeDisabled();
+
+	await input.fill(totp());
+	await create.click();
+	const link = await page.locator("#link_url").inputValue();
+
+	const reader = await person();
+	await read_note(reader, link);
+	await expect(reader.page.locator("#read_filelist")).toContainText("big.bin");
+});
+
+test("copy buttons",async ({ person }) => {
 	const text = "copied text";
 	// Records what is copied, reading the clipboard back would need a permission
 	const copying = async () => {

@@ -205,6 +205,9 @@ let server_config = {
 
 	/// A logo is served at ./logo
 	logo: false,
+
+	/// Notes bigger than this (after encryption and packaging) require a TOTP code, none if null
+	max_note_size_without_totp: null as number | null,
 };
 
 function render_new_note() {
@@ -219,7 +222,13 @@ function render_new_note() {
 		renderFiles();
 		renderNoteStatus();
 	}
+	/// Whether the note is big enough to require a TOTP code
+	function totp_required() {
+		const max = server_config.max_note_size_without_totp;
+		return !pkg.empty && max !== null && pkg.total_len > max;
+	}
 	function renderNoteStatus() {
+		input_totp_label.hidden = input_totp.hidden = !totp_required();
 		if (pkg.empty) {
 			input_status.textContent = "";
 			input_settings_status.textContent = "";
@@ -227,7 +236,7 @@ function render_new_note() {
 			return;
 		}
 		const doesnt_fit = server_config.max_note_size > 0 && pkg.total_len > server_config.max_note_size;
-		input_createbtn.disabled = doesnt_fit;
+		input_createbtn.disabled = doesnt_fit || (totp_required() && !/^[0-9]{6}$/.test(input_totp.value));
 		const total_len_h = humanSize(pkg.total_len);
 		const max_note_size_h = server_config.max_note_size > 0 ? humanSize(server_config.max_note_size) : "♾️";
 		input_status.textContent = `Note size: ${total_len_h} / ${max_note_size_h}.`;
@@ -318,7 +327,7 @@ function render_new_note() {
 
 			let note_id = await post_note(
 				blob,
-				share_settings(),
+				{ ...share_settings(), totp: totp_required() ? input_totp.value : undefined },
 				(loaded, total) => {
 					const percent = (loaded / total) * 100;
 					input_createbtn.textContent = `${loaded} / ${total}`
@@ -333,6 +342,11 @@ function render_new_note() {
 			input_createbtn.textContent = `Error: ${err instanceof Error ? err.message : err}, Retry?`;
 		} finally {
 			input_createbtn.disabled = false;
+			// A refused code is not worth retrying
+			if (totp_required()) {
+				input_totp.value = "";
+				renderNoteStatus();
+			}
 		}
 	}
 
@@ -347,6 +361,8 @@ function render_new_note() {
 	/// A switch rather than a <select>: creating a <select> reports an inline style CSP violation in WebKit
 	let expires_unit = default_unit.secs;
 	let input_expires_unit_btns: HTMLButtonElement[] = [];
+	let input_totp_label: HTMLLabelElement;
+	let input_totp: HTMLInputElement;
 	let input_createbtn: HTMLButtonElement;
 	let input_status: HTMLDivElement;
 	let input_settings_status: HTMLDivElement;
@@ -516,6 +532,13 @@ function render_new_note() {
 							}}>{tr(unit.label)}</button>))}
 					</div>
 				</div>
+				{input_totp_label = <label htmlFor="input_totp" hidden>
+					{tr(i18n.Totp_code)}
+					<span>{tr(i18n.Totp_code_desc)}</span>
+				</label>}
+				{input_totp = <input id="input_totp" type="text" inputMode="numeric" maxLength={6}
+					autocomplete="one-time-code" spellcheck={false} hidden
+					oninput={renderNoteStatus} />}
 			</fieldset>
 
 			{

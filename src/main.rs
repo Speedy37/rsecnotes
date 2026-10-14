@@ -14,15 +14,17 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 mod db;
 mod filestore;
 mod ratelimit;
+mod totp;
 mod util;
 use db::*;
 use ratelimit::RateLimiter;
+use totp::{Totp, TotpSecret};
 
 use crate::util::{Duration, Size};
 
@@ -44,6 +46,8 @@ enum Args {
         #[arg(short, long)]
         config: String,
     },
+    /// Generate a TOTP secret, required to create large notes (see `[server_settings.totp]`)
+    GenerateTotp,
 }
 
 const EXAMPLE_CONFIG: &[u8] = include_bytes!("./config.example.toml");
@@ -82,6 +86,43 @@ struct ConfigFileServer {
 
     /// Per client limits on notes creation, no limits if absent
     pub rate_limit: Option<ConfigFileRateLimit>,
+
+    /// TOTP code required to create big notes, no code if absent
+    pub totp: Option<ConfigFileTotp>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ConfigFileTotp {
+    /// Notes bigger than this (after encryption and packaging) require a TOTP code, 0B for every note
+    pub max_note_size_without_code: Size,
+
+    /// Base32 shared secret, enrolled in the authenticator apps
+    pub secret: TotpSecret,
+
+    /// Invalid codes allowed per client over `failures_period`
+    #[serde(default = "default_max_client_failures")]
+    pub max_client_failures: u32,
+
+    /// Invalid codes allowed from all clients over `failures_period`, against guesses from many addresses.
+    /// Reaching it also blocks big notes for everyone until it refills.
+    #[serde(default = "default_max_failures")]
+    pub max_failures: u32,
+
+    /// Duration over which the failures budgets are fully refilled
+    #[serde(default = "default_failures_period")]
+    pub failures_period: Duration,
+}
+
+fn default_max_client_failures() -> u32 {
+    totp::DEFAULT_MAX_CLIENT_FAILURES
+}
+
+fn default_max_failures() -> u32 {
+    totp::DEFAULT_MAX_FAILURES
+}
+
+fn default_failures_period() -> Duration {
+    Duration { seconds: totp::DEFAULT_FAILURES_PERIOD.as_secs() as u32 }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -154,6 +195,9 @@ pub struct PublicConfig {
 
     /// A logo is served at /logo
     pub logo: bool,
+
+    /// Notes bigger than this require a TOTP code, none if absent, server enforced
+    pub max_note_size_without_totp: Option<usize>,
 }
 
 struct Logo {
@@ -183,6 +227,7 @@ struct AppState {
     db: Mutex<Database>,
     rate_limiter: Option<Mutex<RateLimiter>>,
     client_ip_header: Option<HeaderName>,
+    totp: Option<Mutex<Totp>>,
 }
 
 /// The whole client, with index.css, index.js and icon.svg inlined by build.rs
@@ -209,6 +254,15 @@ async fn main() -> anyhow::Result<()> {
             let config: Vec<u8> = fs::read(config)?;
             let config: ConfigFile = toml::from_slice(&config)?;
             main_run(&config).await
+        }
+        Args::GenerateTotp => {
+            let secret = TotpSecret::generate();
+            println!("Add to the [server_settings.totp] section of the config file:");
+            println!("secret = \"{}\"", secret.base32());
+            println!();
+            println!("Add to authenticator apps supporting SHA256 (this link, or this link as a QR code):");
+            println!("{}", secret.otpauth_uri());
+            Ok(())
         }
     }
 }
@@ -256,6 +310,17 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         Some(path) => Some(Logo::load(path)?),
         None => None,
     };
+    let max_note_size_without_totp = server_settings.totp.as_ref().map(|totp| totp.max_note_size_without_code);
+    if let Some(totp) = &server_settings.totp {
+        anyhow::ensure!(
+            totp.max_note_size_without_code < max_note_size,
+            "totp: max_note_size_without_code must be below the biggest slot max_note_size ({max_note_size})"
+        );
+        anyhow::ensure!(
+            totp.max_client_failures > 0 && totp.max_failures > 0 && totp.failures_period.seconds > 0,
+            "totp: max_client_failures, max_failures and failures_period must be non zero"
+        );
+    }
     let appstate = Arc::new(AppState {
         config: PublicConfig {
             logo: logo.is_some(),
@@ -267,11 +332,23 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             max_remaining_views,
             min_expires_after,
             max_expires_after,
+            max_note_size_without_totp: max_note_size_without_totp.map(|size| size.bytes),
         },
         logo,
         db: Mutex::new(db),
         rate_limiter,
         client_ip_header,
+        totp: server_settings
+            .totp
+            .as_ref()
+            .map(|totp| {
+                Mutex::new(Totp::new(
+                    totp.secret.clone(),
+                    totp.max_client_failures,
+                    totp.max_failures,
+                    std::time::Duration::from_secs(totp.failures_period.seconds.into()),
+                ))
+            }),
     });
 
     let app = Router::new()
@@ -312,11 +389,15 @@ async fn collect_expired_notes(appstate: Arc<AppState>) -> std::io::Result<()> {
         if let Some(rate_limiter) = &appstate.rate_limiter {
             rate_limiter.lock().unwrap().collect_full_buckets(now);
         }
+        if let Some(totp) = &appstate.totp {
+            totp.lock().unwrap().collect_full_buckets(now);
+        }
     }
 }
 
 const X_EXPIRES_AFTER: &str = "x-note-expires-after";
 const X_REMAINING_VIEWS: &str = "x-note-remaining-views";
+const X_TOTP: &str = "x-note-totp";
 
 fn into_bad_request(e: impl ToString) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, e.to_string())
@@ -445,6 +526,33 @@ fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32),
     Ok((expires_after, remaining_views))
 }
 
+/// Notes bigger than `max_note_size_without_totp` require a valid TOTP code
+fn check_totp(appstate: &AppState, peer: SocketAddr, headers: &HeaderMap, len: usize) -> Result<(), Response> {
+    let (Some(totp), Some(max_len)) = (&appstate.totp, appstate.config.max_note_size_without_totp) else {
+        return Ok(());
+    };
+    if len <= max_len {
+        return Ok(());
+    }
+    let code = headers.get(X_TOTP).and_then(|code| code.to_str().ok());
+    let unix_secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|err| into_internal_error(err).into_response())?
+        .as_secs();
+    let ip = client_ip(appstate, peer, headers);
+    let verified = totp.lock().unwrap().verify(ip, code, unix_secs, Instant::now());
+    verified.map_err(|rejected| match rejected {
+        totp::Rejected::Missing => (StatusCode::FORBIDDEN, "totp code required").into_response(),
+        totp::Rejected::Invalid => (StatusCode::FORBIDDEN, "invalid totp code").into_response(),
+        totp::Rejected::TooManyFailures(retry_after) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after.as_secs_f64().ceil().to_string())],
+            "too many invalid totp codes, retry later",
+        )
+            .into_response(),
+    })
+}
+
 /// Everything is checked before receiving the body
 async fn add_note(
     appstate: &AppState,
@@ -455,6 +563,7 @@ async fn add_note(
     let len = declared_len(appstate, headers).map_err(IntoResponse::into_response)?;
     let (expires_after, remaining_views) =
         note_settings(appstate, headers).map_err(IntoResponse::into_response)?;
+    check_totp(appstate, peer, headers, len)?;
     if let Some(rate_limiter) = &appstate.rate_limiter {
         let ip = client_ip(appstate, peer, headers);
         let acquired = rate_limiter
