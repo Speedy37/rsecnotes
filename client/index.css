@@ -210,6 +210,7 @@ select,
 textarea {
 	min-height: 200px;
 	font-family: monospace;
+	resize: vertical;
 }
 
 textarea:focus-visible,
@@ -357,7 +358,8 @@ label > span {
 }
 /* Centered when there is enough space, shrinks with the parent otherwise */
 #input_pwd,
-#input_pwd_typed_block {
+#input_pwd_typed_block,
+#read_pwd {
 	width: 100%;
 	max-width: 620px; /* up to 40 chars */
 	margin: 0 auto;
@@ -371,9 +373,10 @@ the refresh button sits alone in the values column */
 #input_pwd > .pwd-row {
 	grid-column: 1 / 3;
 }
+/* As tall as the password row */
 #input_pwd > .refresh {
 	justify-self: center;
-	align-self: center;
+	align-self: stretch;
 }
 .pwd {
 	font-family: monospace;
@@ -401,19 +404,36 @@ over it, without affecting the layout */
 	position: absolute;
 	color: color-mix(in srgb, var(--text-color) 40%, var(--bg-color));
 }
-/* Generated or typed password, then its copy button */
+/* Generated or typed password, then its copy button, as tall as the password */
 .pwd-row {
 	display: flex;
-	align-items: center;
+	align-items: stretch;
 }
 .pwd-row > .pwd {
 	flex: 1;
 	min-width: 0;
 }
+/* The copy button is attached to the right of the password: no gap, shared edge with square corners */
+.pwd-row > :first-child {
+	margin-right: 0;
+}
+.pwd-row > .pwd,
+.pwd-typed > .pwd {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+.pwd-row > .copy {
+	margin-left: 0;
+	border-left: none;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+}
 .pwd-typed {
 	position: relative;
 	flex: 1;
 	min-width: 0;
+	/* Same margin as the copy button, so both have the same height */
+	margin: 0.25rem;
 	display: grid;
 }
 .pwd-typed > .pwd {
@@ -489,6 +509,26 @@ over it, without affecting the layout */
 	grid-template-columns: 1fr auto;
 }
 
+/* When the note will be destroyed, shown first as an info box */
+#read_settings_status {
+	order: -1;
+	margin: 0.5rem 0.25rem;
+	padding: 0.75rem 1rem;
+	border: 2px solid color-mix(in srgb, var(--primary-blue) 50%, var(--bg-color));
+	border-radius: 0.5rem;
+	background: color-mix(in srgb, var(--primary-blue) 10%, var(--bg-color));
+}
+/* Last view: the note is gone from the server, a warning box */
+#read_settings_status.last-view {
+	border-color: #d43407;
+	background: color-mix(in srgb, #d43407 15%, var(--bg-color));
+	font-size: 1.25rem;
+	font-weight: 700;
+}
+#read_settings_status.last-view::before {
+	content: "⚠️ ";
+}
+
 /* Note and Share settings boxes, the Note one wraps the borderless Text, Files and Credentials sections */
 fieldset {
 	display: grid;
@@ -521,25 +561,48 @@ fieldset.box > legend {
 legend > label {
 	margin: 0;
 }
-legend > button {
+/* Text with its copy button in the top right corner, the text keeps clear of it */
+.text-copy {
+	position: relative;
+	display: grid;
+}
+.text-copy > textarea {
 	margin: 0;
-	padding: 0.15rem 0.6rem;
-	font-size: 0.9rem;
+	padding-right: 4rem;
+}
+/* Attached in the corner: its border is on the text one, rounded like the text top right corner */
+.text-copy > .copy {
+	position: absolute;
+	top: 0;
+	right: 0;
+	margin: 0;
+	padding: 0.35rem 0.6rem;
+	border-radius: 0 0.25rem 0 0.25rem;
+}
+.text-copy > .copy > svg {
+	scale: none;
 }
 fieldset > textarea,
 fieldset > .drop,
-fieldset > .list,
-fieldset > .pwd {
+fieldset > .list {
 	margin: 0;
 }
 #link_block > * {
 	grid-column: 1 / 3;
 }
+/* The copy button is attached to the right of the link, like the password one */
 #link_url {
 	grid-column: 1 / 2;
+	margin-right: 0;
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
 }
 #link_block > .copy {
 	grid-column: 2 / 3;
+	margin-left: 0;
+	border-left: none;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
 }
 
 #link_qrcode > img {

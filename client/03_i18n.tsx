@@ -132,8 +132,8 @@ const i18n = {
 		fr: "La note n'expirera pas et sera détruite lorsque le serveur redémarrera ou pour libérer de la mémoire."
 	},
 	Last_possible_view: {
-		en: "This is the last possible view of this note, and it's now destroyed from the server!",
-		fr: "Ceci est la dernière vue possible de cette note, et elle est maintenant supprimée du serveur !"
+		en: "This was the last view: the note is now destroyed from the server. Save what you need before leaving this page!",
+		fr: "C'était la dernière vue : la note est maintenant supprimée du serveur. Enregistrez ce dont vous avez besoin avant de quitter cette page !"
 	},
 	Note_will_expire: {
 		en: (remaining_views: number, expires_after: number, bView = false) => {

@@ -11,13 +11,13 @@ function buildSettingsStatus(remaining_views: number, expires_after: number, bVi
 
 function render_refresh_svg() {
 	let svg = document.createElement("div");
-	svg.innerHTML = `<svg width="24" height="24"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>`;
+	svg.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>`;
 	return svg.firstElementChild;
 }
 
 function render_copy_svg() {
 	let svg = document.createElement("div");
-	svg.innerHTML = `<svg width="24" height="24"><path d="M18.984 21V6.984H8.016V21h10.968zm0-15.984q.797 0 1.407.586T21 6.984V21q0 .797-.61 1.406t-1.406.61H8.016q-.797 0-1.407-.61T6 21V6.984q0-.796.61-1.382t1.406-.586h10.968zm-3-4.032V3h-12v14.016H2.016V3q0-.797.586-1.406t1.382-.61h12z"></path></svg>`;
+	svg.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M18.984 21V6.984H8.016V21h10.968zm0-15.984q.797 0 1.407.586T21 6.984V21q0 .797-.61 1.406t-1.406.61H8.016q-.797 0-1.407-.61T6 21V6.984q0-.796.61-1.382t1.406-.586h10.968zm-3-4.032V3h-12v14.016H2.016V3q0-.797.586-1.406t1.382-.61h12z"></path></svg>`;
 	return svg.firstElementChild;
 }
 
@@ -100,9 +100,11 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 			<fieldset>
 				<legend>
 					<label htmlFor="read_note">{tr(i18n.Text)}</label>
-					{render_copy(() => note.text)}
 				</legend>
-				<textarea id="read_note" value={note.text} readOnly />
+				<div className="text-copy">
+					<textarea id="read_note" value={note.text} readOnly />
+					{render_copy(() => note.text)}
+				</div>
 			</fieldset>,
 		);
 	}
@@ -141,9 +143,11 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 			<fieldset>
 				<legend>
 					<label>{tr(i18n.Credentials)}</label>
-					{render_copy(() => note.pwd)}
 				</legend>
-				<div className="pwd">{...render_pwd_view(note.pwd)}</div>
+				<div id="read_pwd" className="pwd-row">
+					<div className="pwd">{...render_pwd_view(note.pwd)}</div>
+					{render_copy(() => note.pwd)}
+				</div>
 			</fieldset>,
 		);
 	}
@@ -154,11 +158,14 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 	btn_newnote.style.display = "";
 
 
-	read_settings_status.textContent = buildSettingsStatus(
-		raw_note.remaining_views,
-		raw_note.expires_after,
-		true,
-	);
+	function render_status(remaining_views: number, expires_after: number) {
+		read_settings_status.textContent = buildSettingsStatus(remaining_views, expires_after, true);
+		// The note is gone from the server, this page holds the only copy: shown as an alert above the note
+		const last_view = remaining_views === 0;
+		read_settings_status.classList.toggle("last-view", last_view);
+		if (last_view) read_settings_status.setAttribute("role", "alert");
+	}
+	render_status(raw_note.remaining_views, raw_note.expires_after);
 	if (raw_note.expires_after > 0) {
 		const remaining_views = raw_note.remaining_views;
 		const expires_at = Date.now() + raw_note.expires_after * 1000;
@@ -166,15 +173,11 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 			const now = Date.now();
 			if (expires_at > now) {
 				const expires_after = (expires_at - now) / 1000;
-				read_settings_status.textContent = buildSettingsStatus(
-					remaining_views,
-					expires_after,
-					true,
-				);
+				render_status(remaining_views, expires_after);
 				const delay = (expires_after - Math.floor(expires_after)) * 1000;
 				setTimeout(renderExpiresAfter, delay + 100);
 			} else {
-				read_settings_status.textContent = buildSettingsStatus(0, 0, true);
+				render_status(0, 0);
 			}
 		};
 		renderExpiresAfter();
@@ -385,19 +388,22 @@ function render_new_note() {
 				<legend>
 					<label htmlFor="input_note">{tr(i18n.Text)}</label>
 				</legend>
-				{
-					(input_note = (
-						<textarea
-							id="input_note"
-							placeholder={tr(i18n.write_your_note_here)}
-							autocomplete="off"
-							oninput={() => {
-								pkg.text = input_note.value;
-								renderNoteStatus();
-							}}
-						/>
-					))
-				}
+				<div className="text-copy">
+					{
+						(input_note = (
+							<textarea
+								id="input_note"
+								placeholder={tr(i18n.write_your_note_here)}
+								autocomplete="off"
+								oninput={() => {
+									pkg.text = input_note.value;
+									renderNoteStatus();
+								}}
+							/>
+						))
+					}
+					{render_copy(() => input_note.value)}
+				</div>
 			</fieldset>
 			{server_config.max_files > 0 ? <fieldset id="input_files">
 				<legend>
