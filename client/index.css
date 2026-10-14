@@ -41,9 +41,16 @@ body {
 	color: var(--text-color);
 	margin: 20px auto;
 	max-width: 900px;
+	/* Side gutter on narrow screens */
+	padding: 0 1rem;
 	display: grid;
 }
 
+h1 {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+}
 #rsecnotes {
 	font-family: "Alfa Slab One", serif;
 	font-size: 3em;
@@ -52,25 +59,51 @@ body {
 	margin-bottom: 0;
 	color: var(--text-color);
 	text-decoration: none;
+	transform: translateY(-6px);
 }
-
+#rsecnotes > span {
+	margin-left: 0.25rem;
+}
 #rsecnotes:hover > span {
 	text-decoration: underline;
 }
-
 #rsecnotes > .y {
-	margin-left: 0.25rem;
 	color: #ffc832;
 }
-
 #rsecnotes > .b {
-	margin-left: 0.25rem;
 	color: #083bb5;
 }
 
-h2 {
+#slogan_bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	column-gap: 20px;
 	margin-top: -35px;
+	/* Align the slogan with the logo: icon.svg is painted from x=11.329 of its 64 viewBox, shown at 64px */
+	padding-left: 11.33px;
+}
+
+h2 {
+	margin-top: 0;
 	font-family: monospace;
+}
+
+nav {
+	display: flex;
+	align-items: center;
+	gap: 20px;
+}
+nav > a > svg {
+	fill: var(--text-color);
+	vertical-align: middle;
+}
+.about:hover > svg {
+	fill: var(--primary-blue);
+}
+.git:hover > svg {
+	fill: #f05032;
 }
 
 h2 > span {
@@ -84,18 +117,6 @@ h2 > span {
 	/* move it away from the text a bit */
 	text-decoration-skip-ink: auto;
 	/* nicer around glyphs */
-}
-
-footer {
-	position: fixed;
-	top: 0;
-	right: 0;
-	font-size: 1rem;
-}
-footer > button {
-	background: transparent;
-	border: none;
-	font-size: 1rem;
 }
 
 button.error {
@@ -177,7 +198,8 @@ label,
 	font-weight: normal;
 	align-self: center;
 }
-label > input[type="checkbox"] {
+label > input[type="checkbox"],
+legend > input[type="checkbox"] {
 	height: 1.5rem;
 	width: 1.5rem;
 	margin: 0 10px 0 0;
@@ -195,8 +217,11 @@ label {
 
 label > span {
 	display: block;
+	margin-top: -0.2rem;
+	padding-left: 0.1rem;
 	font-weight: normal;
 	font-size: 0.9rem;
+	color: color-mix(in srgb, var(--text-color) 65%, var(--bg-color));
 }
 
 .list {
@@ -226,13 +251,19 @@ label > span {
 
 #input_settings {
 	display: grid;
-	grid-template-columns: 50% 1fr;
+	grid-template-columns: 2em 50% 1fr;
 }
 #input_pwd {
 	display: grid;
-	grid-template-columns: auto auto auto;
-	margin: auto;
-	margin-bottom: 2rem;
+	/* label, range (takes the remaining width), value */
+	grid-template-columns: auto 1fr auto;
+}
+/* Centered when there is enough space, shrinks with the parent otherwise */
+#input_pwd,
+#input_pwd_typed_block {
+	width: 100%;
+	max-width: 620px; /* up to 40 chars */
+	margin: 0 auto;
 }
 #input_pwd > input:read-only {
 	text-align: center;
@@ -240,11 +271,16 @@ label > span {
 }
 #input_pwd > .pwd {
 	grid-column: 1 / 3;
-	min-width: 600px;
 }
 .pwd {
 	font-family: monospace;
 	text-align: center;
+	line-height: 1.4;
+	/* Long passwords wrap at any character, including punctuation and spaces (no hanging spaces),
+	so the typed password textarea and its colored view always wrap identically */
+	white-space: break-spaces;
+	word-break: break-all;
+	line-break: anywhere;
 }
 .pwd-numbers {
 	color: color-mix(in srgb, #85beff var(--dark-percent), #0364d3);
@@ -252,7 +288,72 @@ label > span {
 .pwd-symbols {
 	color: color-mix(in srgb, #ffa18a var(--dark-percent), #bb3b1b);
 }
-.copy > svg {
+/* Visible spaces: the space keeps its width, the dot is drawn at its static position (same baseline),
+over it, without affecting the layout */
+.pwd-space {
+	position: relative;
+}
+.pwd-space::before {
+	content: "·";
+	position: absolute;
+	color: color-mix(in srgb, var(--text-color) 40%, var(--bg-color));
+}
+.pwd-actions {
+	display: flex;
+	align-items: center;
+}
+#input_pwd_typed_block {
+	display: flex;
+	align-items: center;
+}
+.pwd-typed {
+	position: relative;
+	flex: 1;
+	display: grid;
+}
+.pwd-typed > .pwd {
+	margin: 0;
+}
+/* The view sets the height (it grows as the password wraps), the textarea covers it exactly */
+.pwd-typed > textarea.pwd {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	box-sizing: border-box;
+	margin: 0;
+	resize: none;
+	overflow: hidden;
+	background: transparent;
+	color: transparent;
+	caret-color: var(--text-color);
+}
+
+/* Segmented switch, eg. generated or typed password */
+.switch {
+	display: inline-flex;
+	margin-left: 1rem;
+}
+.switch > button {
+	margin: 0;
+	padding: 0.15rem 0.6rem;
+	font-size: 0.9rem;
+	border-radius: 0;
+}
+.switch > button:first-child {
+	border-radius: 0.25rem 0 0 0.25rem;
+}
+.switch > button:last-child {
+	border-left: none;
+	border-radius: 0 0.25rem 0.25rem 0;
+}
+.switch > button.selected {
+	background: var(--primary-blue);
+	cursor: default;
+}
+.copy > svg,
+.refresh > svg {
 	fill: var(--text-color);
 	scale: 1.25;
 	vertical-align: middle;
@@ -275,15 +376,55 @@ label > span {
 #input_block,
 #link_block,
 #consume_block,
-#read_block,
-#input_files,
-#read_pwd {
+#read_block {
 	display: grid;
 }
 
-#link_block,
-#read_pwd {
+#link_block {
 	grid-template-columns: 1fr auto;
+}
+
+/* Note and Share settings boxes, the Note one wraps the borderless Text, Files and Credentials sections */
+fieldset {
+	display: grid;
+	gap: 0.5rem;
+	min-width: 0;
+	margin: 0.5rem 0;
+	padding: 0;
+	border: none;
+}
+fieldset.box {
+	gap: 0.5rem;
+	margin: 0.5rem 0.25rem;
+	padding: 0.25rem 0.75rem 0.75rem;
+	border: 2px solid color-mix(in srgb, var(--border-color) 40%, var(--bg-color));
+	border-radius: 0.5rem;
+}
+legend {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0;
+	font-size: 1.25rem;
+	font-weight: 700;
+}
+fieldset.box > legend {
+	padding: 0 0.5rem;
+	font-size: 1.5rem;
+}
+legend > label {
+	margin: 0;
+}
+legend > button {
+	margin: 0;
+	padding: 0.15rem 0.6rem;
+	font-size: 0.9rem;
+}
+fieldset > textarea,
+fieldset > .drop,
+fieldset > .list,
+fieldset > .pwd {
+	margin: 0;
 }
 #link_block > * {
 	grid-column: 1 / 3;
@@ -306,4 +447,25 @@ label > span {
 .multi-link {
 	text-decoration: none;
 	/* remove default underline */
+}
+
+#btn_theme {
+	position: fixed;
+	top: 0;
+	right: 0;
+	font-size: 1rem;
+	border: none;
+	font-size: 1rem;
+	background: transparent;
+}
+#btn_theme:hover {
+	background: var(--primary-blue);
+}
+
+a {
+	color: var(--text-color);
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
 }

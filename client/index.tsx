@@ -9,6 +9,12 @@ function buildSettingsStatus(remaining_views: number, expires_after: number, bVi
 }
 
 
+function render_refresh_svg() {
+	let svg = document.createElement("div");
+	svg.innerHTML = `<svg width="24" height="24"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>`;
+	return svg.firstElementChild;
+}
+
 function render_copy_svg() {
 	let svg = document.createElement("div");
 	svg.innerHTML = `<svg width="24" height="24"><path d="M18.984 21V6.984H8.016V21h10.968zm0-15.984q.797 0 1.407.586T21 6.984V21q0 .797-.61 1.406t-1.406.61H8.016q-.797 0-1.407-.61T6 21V6.984q0-.796.61-1.382t1.406-.586h10.968zm-3-4.032V3h-12v14.016H2.016V3q0-.797.586-1.406t1.382-.61h12z"></path></svg>`;
@@ -88,20 +94,16 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 	let read_settings_status: HTMLElement;
 
 	const read_block: HTMLDivElement = <div id="read_block" />;
+	const note_block: HTMLFieldSetElement = <fieldset className="box"><legend>{tr(i18n.Note)}</legend></fieldset>;
 	if (note.text) {
-		read_block.append(
-			<label htmlFor="read_note">{tr(i18n.Text)}</label>,
-			<textarea id="read_note" value={note.text} readOnly />,
-			render_copy(() => note.text, tr(i18n.Copy_to_clipboard)),
-		);
-	}
-	if (note.pwd) {
-		read_block.append(
-			<label>{tr(i18n.Password)}</label>,
-			<div id="read_pwd">
-				<div className="pwd">{...render_pwd_view(note.pwd)}</div>
-				{render_copy(() => note.pwd)}
-			</div>,
+		note_block.append(
+			<fieldset>
+				<legend>
+					<label htmlFor="read_note">{tr(i18n.Text)}</label>
+					{render_copy(() => note.text)}
+				</legend>
+				<textarea id="read_note" value={note.text} readOnly />
+			</fieldset>,
 		);
 	}
 	if (note.files.length > 0) {
@@ -125,13 +127,28 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 			);
 		})
 
-		read_block.append(
-			<label>{tr(i18n.Files)}</label>,
-			<div className="list" id="read_filelist">{...vec}</div>
+		note_block.append(
+			<fieldset>
+				<legend>
+					<label>{tr(i18n.Files)}</label>
+				</legend>
+				<div className="list" id="read_filelist">{...vec}</div>
+			</fieldset>,
+		);
+	}
+	if (note.pwd) {
+		note_block.append(
+			<fieldset>
+				<legend>
+					<label>{tr(i18n.Credentials)}</label>
+					{render_copy(() => note.pwd)}
+				</legend>
+				<div className="pwd">{...render_pwd_view(note.pwd)}</div>
+			</fieldset>,
 		);
 	}
 
-	read_block.append(read_settings_status = <p id="read_settings_status" />);
+	read_block.append(note_block, read_settings_status = <p id="read_settings_status" />);
 
 	swap_main(read_block);
 	btn_newnote.style.display = "";
@@ -222,9 +239,10 @@ function render_new_note() {
 
 	function renderFiles() {
 		if (pkg.files.length === 0) {
-			input_filelist.innerText = tr(i18n.No_files_selected);
+			input_filelist.style.display = "none";
 			return;
 		}
+
 		input_filelist.innerHTML = "";
 		pkg.files.forEach(({ file: f }, i) => {
 			input_filelist.append(
@@ -237,6 +255,7 @@ function render_new_note() {
 				}}>{tr(i18n.Remove)}</button>,
 			);
 		});
+		input_filelist.style.display = "";
 	}
 
 	async function create() {
@@ -258,6 +277,7 @@ function render_new_note() {
 				},
 				(loaded, total) => {
 					const percent = (loaded / total) * 100;
+					input_createbtn.textContent = `${loaded} / ${total}`
 					input_createbtn.style.setProperty("--progress", percent.toFixed(2) + "%");
 				},
 			);
@@ -282,38 +302,67 @@ function render_new_note() {
 	let input_status: HTMLDivElement;
 	let input_settings_status: HTMLDivElement;
 	let input_pwd = "";
-	let input_pwd_div: HTMLDivElement;
+	let input_pwd_card: HTMLElement;
+	let input_pwd_div: HTMLDivElement | null = null;
 	let input_pwd_checkbox: HTMLInputElement;
+	let input_pwd_switch: HTMLDivElement;
+	let input_pwd_generate_btn: HTMLButtonElement;
+	let input_pwd_manual_btn: HTMLButtonElement;
+	let input_pwd_mode: "generate" | "manual" = "generate";
+	function set_pwd(pwd: string) {
+		input_pwd = pwd;
+		pkg.pwd = pwd;
+		renderNoteStatus();
+	}
+	function render_pwd_panel() {
+		input_pwd_div?.remove();
+		// Typing starts from the current password, so a generated one can be adjusted
+		const div = input_pwd_mode === "generate" ? render_pwd(set_pwd) : render_pwd_input(input_pwd, set_pwd);
+		input_pwd_card.append(div);
+		input_pwd_div = div;
+	}
+	function set_pwd_mode(mode: "generate" | "manual") {
+		input_pwd_mode = mode;
+		input_pwd_generate_btn.classList.toggle("selected", mode === "generate");
+		input_pwd_manual_btn.classList.toggle("selected", mode === "manual");
+		render_pwd_panel();
+	}
 	function toggle_pwd() {
+		input_pwd_switch.style.display = input_pwd_checkbox.checked ? "" : "none";
 		if (input_pwd_checkbox.checked) {
-			const div = input_pwd_checkbox.checked ? render_pwd(pwd => {
-				input_pwd = pwd;
-				pkg.pwd = input_pwd_checkbox.checked ? input_pwd : "";
-				renderNoteStatus();
-			}) : <div/>;
-			input_pwd_div.parentElement?.replaceChild(div, input_pwd_div);
-			input_pwd_div = div;
+			render_pwd_panel();
+		} else {
+			input_pwd_div?.remove();
+			input_pwd_div = null;
+			set_pwd("");
 		}
-		input_pwd_div.style.display = input_pwd_checkbox.checked ? "" : "none"
 	}
 	swap_main(
 		<div id="input_block">
-			<label htmlFor="input_note">{tr(i18n.Text)}</label>
-			{
-				(input_note = (
-					<textarea
-						id="input_note"
-						placeholder={tr(i18n.write_your_note_here)}
-						autocomplete="off"
-						oninput={() => {
-							pkg.text = input_note.value;
-							renderNoteStatus();
-						}}
-					/>
-				))
-			}
-			{server_config.max_files > 0 ? <div id="input_files">
-				<label>{tr(i18n.Files)}</label>
+			<fieldset className="box">
+			<legend>{tr(i18n.Note)}</legend>
+			<fieldset>
+				<legend>
+					<label htmlFor="input_note">{tr(i18n.Text)}</label>
+				</legend>
+				{
+					(input_note = (
+						<textarea
+							id="input_note"
+							placeholder={tr(i18n.write_your_note_here)}
+							autocomplete="off"
+							oninput={() => {
+								pkg.text = input_note.value;
+								renderNoteStatus();
+							}}
+						/>
+					))
+				}
+			</fieldset>
+			{server_config.max_files > 0 ? <fieldset id="input_files">
+				<legend>
+					<label>{tr(i18n.Files)}</label>
+				</legend>
 				{
 					(input_filedrop = (
 						<div
@@ -351,25 +400,36 @@ function render_new_note() {
 				}
 				{
 					(input_filelist = (
-						<div className="list" id="input_filelist">
-							{tr(i18n.No_files_selected)}
+						<div className="list" id="input_filelist" style="display: none;">
 						</div>
 					))
 				}
-			</div> : ""}
+			</fieldset> : ""}
+			{input_pwd_card = <fieldset>
+				<legend>
+					{input_pwd_checkbox = <input id="input_pwd_checkbox" type="checkbox" onchange={toggle_pwd} />}
+					<label htmlFor="input_pwd_checkbox">
+						{tr(i18n.Credentials)}
+						<span>{tr(i18n.Credentials_desc)}</span>
+					</label>
+					{input_pwd_switch = <div className="switch" style="display: none;">
+						{input_pwd_generate_btn = <button className="selected" title={tr(i18n.GenerateTooltip)}
+							onclick={() => set_pwd_mode("generate")}>{tr(i18n.pwd_mode_generate)}</button>}
+						{input_pwd_manual_btn = <button
+							onclick={() => set_pwd_mode("manual")}>{tr(i18n.pwd_mode_manual)}</button>}
+					</div>}
+				</legend>
+			</fieldset>}
+			</fieldset>
 
-			<label>
-				{input_pwd_checkbox = <input type="checkbox"
-					onclick={toggle_pwd} />}
-				{tr(i18n.Password)}
-			</label>
-			{input_pwd_div = <div />}
-
-
-			<div id="input_settings">
+			<fieldset className="box" id="input_settings">
+				<legend>{tr(i18n.ShareSettings)}</legend>
+				<input type="checkbox"
+					checked={server_config.min_remaining_views > 0 || server_config.default_remaining_views > 0}
+					disabled={server_config.min_remaining_views > 0} />
 				<label htmlFor="input_remaining_views">
 					{tr(i18n.Max_views)}
-					<span>({tr(i18n.Zero_or_empty_for_no_limits)})</span>
+					<span>{tr(i18n.Max_views_desc)}</span>
 				</label>
 				{
 					(input_remaining_views = (
@@ -382,9 +442,12 @@ function render_new_note() {
 						/>
 					))
 				}
+				<input type="checkbox"
+					checked={server_config.max_expires_after > 0 || server_config.default_expires_after > 0}
+					disabled={server_config.max_expires_after > 0} />
 				<label htmlFor="input_expires_after">
 					{tr(i18n.Max_duration)}
-					<span>({tr(i18n.Zero_or_empty_for_no_limits)})</span>
+					<span>{tr(i18n.Max_duration_desc)}</span>
 				</label>
 				{
 					(input_expires_after = (
@@ -397,8 +460,7 @@ function render_new_note() {
 						/>
 					))
 				}
-			</div>
-
+			</fieldset>
 
 			{
 				(input_createbtn = (
@@ -415,6 +477,7 @@ function render_new_note() {
 
 function render_pwd_view(pwd: string): HTMLElement[] {
 	const classify = (ch: string) => {
+		if (ch === " ") return "pwd-space";
 		if (/[a-z]/.test(ch)) return "pwd-lower";
 		if (/[A-Z]/.test(ch)) return "pwd-upper";
 		if (/[0-9]/.test(ch)) return "pwd-numbers";
@@ -426,6 +489,35 @@ function render_pwd_view(pwd: string): HTMLElement[] {
 			{ch}
 		</span>
 	));
+}
+
+/// Typed password, rendered like a generated one: the textarea text is transparent, over a colored view.
+/// A textarea (not an input) so long passwords wrap identically in both
+function render_pwd_input(pwd: string, onchange: (pwd: string) => void) {
+	const view: HTMLDivElement = <div className="pwd" />;
+	const input: HTMLTextAreaElement = <textarea className="pwd" rows={1} value={pwd}
+		autocomplete="off" spellcheck={false}
+		onkeydown={(e) => {
+			if (e.key === "Enter") e.preventDefault();
+		}}
+		oninput={() => {
+			// Single line password, eg. pasted with a trailing new line
+			if (/[\r\n]/.test(input.value)) {
+				const caret = input.selectionStart;
+				const before = input.value.length;
+				input.value = input.value.replace(/[\r\n]/g, "");
+				input.selectionStart = input.selectionEnd = Math.max(0, caret - (before - input.value.length));
+			}
+			render_view();
+			onchange(input.value);
+		}} />;
+	// Zero width space keeps the line height when empty
+	const render_view = () => view.replaceChildren(...render_pwd_view(input.value), "​");
+	render_view();
+	return <div id="input_pwd_typed_block">
+		<div className="pwd-typed">{view}{input}</div>
+		{render_copy(() => input.value)}
+	</div>;
 }
 
 function render_pwd(onchange: (pwd: string) => void) {
@@ -472,7 +564,7 @@ function render_pwd(onchange: (pwd: string) => void) {
 			input_pwd_view.classList.remove("error");
 			input_pwd_view.innerHTML = "";
 			input_pwd_view.append(...render_pwd_view(pwd));
-		} catch(e) {
+		} catch (e) {
 			if (typeof e === "string") {
 				input_pwd_view.textContent = e;
 				input_pwd_view.classList.add("error");
@@ -506,7 +598,7 @@ function render_pwd(onchange: (pwd: string) => void) {
 	}
 
 	let input_pwd_view: HTMLDivElement;
-	let ret = <div id="input_pwd" style="display: none;">
+	let ret = <div id="input_pwd">
 		{...render_pwd_opt("len")}
 		{...render_pwd_opt("lower")}
 		{...render_pwd_opt("upper")}
@@ -514,7 +606,10 @@ function render_pwd(onchange: (pwd: string) => void) {
 		{...render_pwd_opt("symbols")}
 		{...render_pwd_opt("remains")}
 		{input_pwd_view = <div className="pwd" />}
-		{render_copy(() => input_pwd_view.textContent)}
+		<div className="pwd-actions">
+			{render_copy(() => input_pwd_view.textContent)}
+			<button className="refresh" onclick={fix_limits} title={tr(i18n.RegenerateTooltip)}>{render_refresh_svg()}</button>
+		</div>
 	</div>;
 	fix_limits();
 	return ret;
@@ -542,7 +637,7 @@ async function main() {
 	render_consume(note_id, keyb64);
 }
 
-function render_footer() {
+function render_theme() {
 	function set_theme(theme: string | null) {
 		if (theme === "light" || theme === "dark") {
 			btn_theme.textContent = theme === "light" ? "🌕" : "🌑";
@@ -566,7 +661,36 @@ function render_footer() {
 
 	let btn_theme: HTMLButtonElement = <button id="btn_theme" onclick={next_theme}></button>;
 	set_theme(localStorage.getItem("theme"));
-	return <footer>{btn_theme}</footer>;
+	return btn_theme;
+}
+
+
+function render_about() {
+	return <div id="about_block">
+		<p>A secure sharing note and/or file(s) service, inspired by cryptgeon.</p>
+	</div>
+}
+
+function render_git_svg() {
+	let svg = document.createElement("div");
+	svg.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24"><path d="M23.546 10.93L13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2.627l2.76 2.76c.645-.215 1.379-.07 1.889.441.516.515.658 1.258.438 1.9l2.658 2.66c.645-.223 1.387-.078 1.9.435.721.72.721 1.884 0 2.604-.719.719-1.881.719-2.6 0-.539-.541-.674-1.337-.404-1.996L12.86 8.955v6.525c.176.086.342.203.488.348.713.721.713 1.883 0 2.6-.719.721-1.889.721-2.609 0-.719-.719-.719-1.879 0-2.598.182-.18.387-.316.605-.406V8.835c-.217-.091-.424-.222-.6-.401-.545-.545-.676-1.342-.396-2.009L7.636 3.7.45 10.881c-.6.605-.6 1.584 0 2.189l10.48 10.477c.604.604 1.582.604 2.186 0l10.43-10.43c.605-.603.605-1.582 0-2.187"></path></svg>`;
+	return svg.firstElementChild;
+}
+
+function render_info_svg() {
+	let svg = document.createElement("div");
+	svg.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>`;
+	return svg.firstElementChild;
+}
+
+function render_nav() {
+	return <nav>
+		<a className="about" href="#about" title={tr(i18n.About)} onclick={(e) => {
+			e.preventDefault();
+			swap_main(render_about());
+		}}>{render_info_svg()}</a>
+		<a className="git" href="https://github.com/Speedy37/rsecnotes" target="_blank" title={tr(i18n.Show_sources)}>{render_git_svg()}</a>
+	</nav>
 }
 
 const btn_newnote = <button id="btn_newnote" style="display: none;" onclick={() => {
@@ -577,9 +701,12 @@ const btn_newnote = <button id="btn_newnote" style="display: none;" onclick={() 
 }}>{tr(i18n.New_note)}</button>;
 document.title = tr(i18n.title);
 main_container.append(
-	tr(i18n.slogan_jsx)(),
+	<div id="slogan_bar">
+		{tr(i18n.slogan_jsx)()}
+		{render_nav()}
+	</div>,
 	(main_jsx = <div>{tr(i18n.Loading)}</div>),
 	btn_newnote,
-	render_footer()
+	render_theme(),
 );
 main();

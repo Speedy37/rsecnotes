@@ -36,15 +36,15 @@ const i18n = {
 		fr: "secondes"
 	},
 	title: {
-		en: "rsecnotes - Send encrypted notes and/or files",
-		fr: "rsecnotes - Envoyez des notes et/ou fichiers chiffrés",
+		en: "rsecnotes - Share encrypted notes and/or files",
+		fr: "rsecnotes - Partager des notes et/ou fichiers chiffrés",
 	},
 	slogan_jsx: {
 		en: () => (
-			<h2>Send <span title={tr(i18n.slogan_title)}>encrypted</span> notes and/or files.</h2>
+			<h2>Share <span title={tr(i18n.slogan_title)}>encrypted</span> notes and/or files.</h2>
 		),
 		fr: () => (
-			<h2>Envoyez des notes et/ou des fichiers <span title={tr(i18n.slogan_title)}>chiffrés</span></h2>
+			<h2>Partager des notes et/ou des fichiers <span title={tr(i18n.slogan_title)}>chiffrés</span></h2>
 		),
 	},
 	slogan_title: {
@@ -55,9 +55,13 @@ const i18n = {
 		en: "Loading...",
 		fr: "Chargement...",
 	},
+	Note: {
+		en: "Note",
+		fr: "Note",
+	},
 	Text: {
-		en: "Note / Text",
-		fr: "Note / Texte",
+		en: "Text",
+		fr: "Texte",
 	},
 	Files: {
 		en: "Files",
@@ -68,28 +72,24 @@ const i18n = {
 		fr: "Écrivez votre note ici...",
 	},
 	Drop_files_here: {
-		en: "Drop files here or click to choose",
-		fr: "Déposez vos fichiers ici ou cliquez pour choisir",
-	},
-	No_files_selected: {
-		en: "No files selected.",
-		fr: "Aucun fichier sélectionné.",
-	},
-	No_files_included: {
-		en: "No files included.",
-		fr: "Aucun fichier inclus.",
+		en: "Drop files here or click here to add files",
+		fr: "Déposez vos fichiers ici ou cliquez ici pour ajouter des fichiers",
 	},
 	Max_views: {
 		en: "Max views",
 		fr: "Nombre maximal de vues",
 	},
+	Max_views_desc: {
+		en: "How many times can this note be viewed",
+		fr: "Combien de fois cette note pourra être vu",
+	},
 	Max_duration: {
 		en: "Expires In (minutes)",
 		fr: "Expire dans (minutes)",
 	},
-	Zero_or_empty_for_no_limits: {
-		en: "0 or empty for no limits",
-		fr: "0 ou vide pour aucune limite",
+	Max_duration_desc: {
+		en: "How long before this note expires",
+		fr: "Combien de temps avant expiration de cette note",
 	},
 	Remove: {
 		en: "Remove",
@@ -114,10 +114,6 @@ const i18n = {
 	Copy_to_clipboard: {
 		en: "Copy to clipboard",
 		fr: "Copier dans le presse-papiers",
-	},
-	Copied: {
-		en: "Copied!",
-		fr: "Copié !"
 	},
 	consume_warning: {
 		en: "Click 'Show note' to show and delete the note if the view counter has reached its limit",
@@ -161,6 +157,14 @@ const i18n = {
 			return text;
 		}
 	},
+	About: {
+		en: "About",
+		fr: "À propos",
+	},
+	Show_sources: {
+		en: "Show sources",
+		fr: "Voir les sources",
+	},
 	New_note: {
 		en: "New note",
 		fr: "Nouvelle note"
@@ -177,9 +181,33 @@ const i18n = {
 		en: "theme dark",
 		fr: "theme sombre",
 	},
-	Password: {
-		en: "Password",
-		fr: "Mot de passe",
+	Credentials: {
+		en: "Credentials",
+		fr: "Identifiants",
+	},
+	Credentials_desc: {
+		en: "Share a password",
+		fr: "Partager un mot de passe",
+	},
+	pwd_mode_generate: {
+		en: "Generate",
+		fr: "Générer",
+	},
+	pwd_mode_manual: {
+		en: "Manual",
+		fr: "Manuel",
+	},
+	GenerateTooltip: {
+		en: "Generate password",
+		fr: "Générer un mot de passe",
+	},
+	RegenerateTooltip: {
+		en: "Generate a new password",
+		fr: "Générer un nouveau mot de passe",
+	},
+	ShareSettings: {
+		en: "Share settings",
+		fr: "Paramètres de partage",
 	},
 	pwd_len: {
 		en: "Password length",
@@ -202,8 +230,8 @@ const i18n = {
 		fr: "Symboles"
 	},
 	pwd_remains: {
-		en: "Remains",
-		fr: "Reste"
+		en: "Random mix",
+		fr: "Mélange aléatoire"
 	},
 	pwd_err_noclass: {
 		en: "At least one character class must be enabled",
