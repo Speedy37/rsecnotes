@@ -221,6 +221,10 @@ const i18n = {
 		en: (status: number) => `Status code: ${status}`,
 		fr: (status: number) => `Code d'état : ${status}`,
 	},
+	invalid_key: {
+		en: "Invalid link, the decryption key is malformed.",
+		fr: "Lien invalide, la clé de déchiffrement est malformée.",
+	},
 	get_note_failed: {
 		en: "Download failed.",
 		fr: "Échec du téléchargement.",

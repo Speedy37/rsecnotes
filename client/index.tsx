@@ -60,6 +60,8 @@ function render_consume(note_id: string, keyb64: string) {
 	const consume = async () => {
 		try {
 			consume_btn.disabled = true;
+			// Before fetching, so a malformed link does not consume a view
+			checkKeyb64(keyb64);
 			consume_btn.className = "progress";
 			let raw_note = await get_note(note_id, (loaded, total) => {
 				const percent = (loaded / total) * 100;

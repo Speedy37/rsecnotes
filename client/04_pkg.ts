@@ -11,6 +11,11 @@ async function _generateAesGcmKey(): Promise<{
 	return { keyObj: key, rawKey: new Uint8Array(raw) };
 }
 
+/// AES-256 raw key (32 bytes) encoded in base64url without padding
+function checkKeyb64(keyb64: string) {
+	if (!/^[A-Za-z0-9_-]{43}$/.test(keyb64)) throw new Error(tr(i18n.invalid_key));
+}
+
 async function _importAesGcmKey(rawKey: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
 	return await crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, false, ["decrypt"]);
 }
@@ -197,6 +202,7 @@ async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNo
 				`raw_note_len(${data_u8.byteLength}) < V1_HEADER_LEN(${_V1_HEADER_LEN})`,
 			);
 		let iv = data_u8.subarray(1, _V1_HEADER_LEN);
+		checkKeyb64(keyb64);
 		let rawkey = base64urlDecode(keyb64);
 		let key = await _importAesGcmKey(rawkey);
 		const decrypted_data = await crypto.subtle.decrypt(

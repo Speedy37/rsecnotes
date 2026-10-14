@@ -47,6 +47,11 @@ async function get_note(
 	onprogress?: (loaded: number, total: number) => void,
 ): Promise<EncryptedNote> {
 	return new Promise((resolve, reject) => {
+		// Note ids are base64url without padding, this also prevents path traversal (eg. "../config")
+		if (!/^[A-Za-z0-9_-]+$/.test(note_id)) {
+			reject(tr(i18n.get_note_404));
+			return;
+		}
 		const xhr = new XMLHttpRequest();
 		xhr.open("GET", `/notes/${note_id}`);
 		xhr.responseType = "arraybuffer";
