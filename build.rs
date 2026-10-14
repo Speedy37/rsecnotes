@@ -55,11 +55,27 @@ fn main() {
     let index_css = index_css.replace("\r\n", "\n").replace('\r', "\n");
     let index_js = index_js.replace("\r\n", "\n").replace('\r', "\n");
     let index_html = fs::read_to_string("client/index.html").expect("client/index.html");
-    let index_html = inline(&index_html, r#"<link rel="stylesheet" href="index.css" />"#, "style", &index_css);
-    let index_html = inline(&index_html, r#"<script src="index.js"></script>"#, "script", &index_js);
+    let index_html = inline(
+        &index_html,
+        r#"<link rel="stylesheet" href="index.css" />"#,
+        "style",
+        &index_css,
+    );
+    let index_html = inline(
+        &index_html,
+        r#"<script src="index.js"></script>"#,
+        "script",
+        &index_js,
+    );
     let icon_svg = fs::read("client/icon.svg").expect("client/icon.svg");
-    assert!(index_html.contains(r#""icon.svg""#), "index.html must reference icon.svg");
-    let index_html = index_html.replace(r#""icon.svg""#, &format!(r#""{}""#, data_uri("image/svg+xml", &icon_svg)));
+    assert!(
+        index_html.contains(r#""icon.svg""#),
+        "index.html must reference icon.svg"
+    );
+    let index_html = index_html.replace(
+        r#""icon.svg""#,
+        &format!(r#""{}""#, data_uri("image/svg+xml", &icon_svg)),
+    );
     println!("cargo:rustc-env=CSP_STYLE_HASH={}", csp_hash(&index_css));
     println!("cargo:rustc-env=CSP_SCRIPT_HASH={}", csp_hash(&index_js));
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR");
@@ -68,10 +84,16 @@ fn main() {
 
 /// Replace `tag` in `html` by a `<{element}>` block holding `content`
 fn inline(html: &str, tag: &str, element: &str, content: &str) -> String {
-    assert_eq!(html.matches(tag).count(), 1, "index.html must contain {tag} once");
+    assert_eq!(
+        html.matches(tag).count(),
+        1,
+        "index.html must contain {tag} once"
+    );
     // The block would end early, and its hash would not match
     assert!(
-        !content.to_ascii_lowercase().contains(&format!("</{element}")),
+        !content
+            .to_ascii_lowercase()
+            .contains(&format!("</{element}")),
         "inlined {element} must not contain </{element}"
     );
     html.replace(tag, &format!("<{element}>{content}</{element}>"))
@@ -79,7 +101,10 @@ fn inline(html: &str, tag: &str, element: &str, content: &str) -> String {
 
 fn data_uri(content_type: &str, content: &[u8]) -> String {
     use base64::Engine;
-    format!("data:{content_type};base64,{}", base64::engine::general_purpose::STANDARD.encode(content))
+    format!(
+        "data:{content_type};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(content)
+    )
 }
 
 /// CSP source allowing an inline block with exactly this content
@@ -87,5 +112,8 @@ fn csp_hash(content: &str) -> String {
     use base64::Engine;
     use sha2::Digest;
     let hash = sha2::Sha256::digest(content.as_bytes());
-    format!("'sha256-{}'", base64::engine::general_purpose::STANDARD.encode(hash))
+    format!(
+        "'sha256-{}'",
+        base64::engine::general_purpose::STANDARD.encode(hash)
+    )
 }

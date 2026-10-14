@@ -56,7 +56,10 @@ impl Drop for NoteFile {
 }
 
 fn crypto_error(_: chacha20poly1305::aead::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "note encryption/decryption failed")
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "note encryption/decryption failed",
+    )
 }
 
 /// Body length doesn't match the declared length (client error)
@@ -150,10 +153,8 @@ impl FileStore {
     {
         let nonce_prefix: [u8; NONCE_PREFIX_LEN] = rand::rng().random();
         file.write_all(&nonce_prefix).await?;
-        let mut encryptor = EncryptorBE32::from_aead(
-            self.cipher.clone(),
-            GenericArray::from_slice(&nonce_prefix),
-        );
+        let mut encryptor =
+            EncryptorBE32::from_aead(self.cipher.clone(), GenericArray::from_slice(&nonce_prefix));
 
         let mut pending = Bytes::new();
         let mut buffer = Vec::with_capacity(CHUNK_LEN + TAG_LEN);
@@ -282,7 +283,14 @@ mod tests {
     async fn roundtrip_and_remove_on_drop() {
         let dir = temp_dir();
         let store = FileStore::new(&dir).unwrap();
-        for len in [0, 1, CHUNK_LEN - 1, CHUNK_LEN, CHUNK_LEN + 1, 3 * CHUNK_LEN + 7] {
+        for len in [
+            0,
+            1,
+            CHUNK_LEN - 1,
+            CHUNK_LEN,
+            CHUNK_LEN + 1,
+            3 * CHUNK_LEN + 7,
+        ] {
             let data: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
             for frame_len in [1000, CHUNK_LEN + 3] {
                 let file = store.write(len, body(&data, frame_len)).await.unwrap();
@@ -302,8 +310,18 @@ mod tests {
         let dir = temp_dir();
         let store = FileStore::new(&dir).unwrap();
         let data = vec![1u8; 2 * CHUNK_LEN];
-        assert!(store.write(data.len() + 1, body(&data, 1000)).await.is_err());
-        assert!(store.write(data.len() - 1, body(&data, 1000)).await.is_err());
+        assert!(
+            store
+                .write(data.len() + 1, body(&data, 1000))
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .write(data.len() - 1, body(&data, 1000))
+                .await
+                .is_err()
+        );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
         fs::remove_dir_all(&dir).unwrap();
     }

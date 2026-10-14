@@ -122,7 +122,9 @@ fn default_max_failures() -> u32 {
 }
 
 fn default_failures_period() -> Duration {
-    Duration { seconds: totp::DEFAULT_FAILURES_PERIOD.as_secs() as u32 }
+    Duration {
+        seconds: totp::DEFAULT_FAILURES_PERIOD.as_secs() as u32,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -210,7 +212,10 @@ struct Logo {
 
 impl Logo {
     fn load(path: &std::path::Path) -> anyhow::Result<Self> {
-        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default();
         let content_type = match ext.to_ascii_lowercase().as_str() {
             "svg" => "image/svg+xml",
             "png" => "image/png",
@@ -220,7 +225,10 @@ impl Logo {
             _ => anyhow::bail!("logo: {path:?} must be a svg, png, jpg, webp or gif image"),
         };
         let content = fs::read(path).map_err(|err| anyhow::anyhow!("logo: {path:?}: {err}"))?;
-        Ok(Self { content_type, content: content.into() })
+        Ok(Self {
+            content_type,
+            content: content.into(),
+        })
     }
 }
 
@@ -263,7 +271,9 @@ async fn main() -> anyhow::Result<()> {
             println!("Add to the [server_settings.totp] section of the config file:");
             println!("secret = \"{}\"", secret.base32());
             println!();
-            println!("Add to authenticator apps supporting SHA256 (this link, or this link as a QR code):");
+            println!(
+                "Add to authenticator apps supporting SHA256 (this link, or this link as a QR code):"
+            );
             println!("{}", secret.otpauth_uri());
             Ok(())
         }
@@ -299,7 +309,10 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
     let server_settings = &config.server_settings;
     let min_remaining_views = server_settings.min_remaining_views.max(MIN_REMAINING_VIEWS);
     let max_remaining_views = server_settings.max_remaining_views;
-    let min_expires_after = server_settings.min_expires_after.seconds.max(MIN_EXPIRES_AFTER);
+    let min_expires_after = server_settings
+        .min_expires_after
+        .seconds
+        .max(MIN_EXPIRES_AFTER);
     let max_expires_after = server_settings.max_expires_after.seconds;
     anyhow::ensure!(
         max_remaining_views == 0 || max_remaining_views >= min_remaining_views,
@@ -313,14 +326,19 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         Some(path) => Some(Logo::load(path)?),
         None => None,
     };
-    let max_note_size_without_totp = server_settings.totp.as_ref().map(|totp| totp.max_note_size_without_code);
+    let max_note_size_without_totp = server_settings
+        .totp
+        .as_ref()
+        .map(|totp| totp.max_note_size_without_code);
     if let Some(totp) = &server_settings.totp {
         anyhow::ensure!(
             totp.max_note_size_without_code < max_note_size,
             "totp: max_note_size_without_code must be below the biggest slot max_note_size ({max_note_size})"
         );
         anyhow::ensure!(
-            totp.max_client_failures > 0 && totp.max_failures > 0 && totp.failures_period.seconds > 0,
+            totp.max_client_failures > 0
+                && totp.max_failures > 0
+                && totp.failures_period.seconds > 0,
             "totp: max_client_failures, max_failures and failures_period must be non zero"
         );
     }
@@ -342,17 +360,14 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         db: Mutex::new(db),
         rate_limiter,
         client_ip_header,
-        totp: server_settings
-            .totp
-            .as_ref()
-            .map(|totp| {
-                Mutex::new(Totp::new(
-                    totp.secret.clone(),
-                    totp.max_client_failures,
-                    totp.max_failures,
-                    std::time::Duration::from_secs(totp.failures_period.seconds.into()),
-                ))
-            }),
+        totp: server_settings.totp.as_ref().map(|totp| {
+            Mutex::new(Totp::new(
+                totp.secret.clone(),
+                totp.max_client_failures,
+                totp.max_failures,
+                std::time::Duration::from_secs(totp.failures_period.seconds.into()),
+            ))
+        }),
     });
 
     let app = Router::new()
@@ -422,8 +437,14 @@ async fn set_security_headers(mut response: Response) -> Response {
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY);
     // The page URL holds the note decryption key
-    headers.insert(header::REFERRER_POLICY, header::HeaderValue::from_static("no-referrer"));
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
+    headers.insert(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
     response
 }
 
@@ -433,7 +454,11 @@ async fn handler_index() -> impl IntoResponse {
 
 async fn handler_logo(State(appstate): State<Arc<AppState>>) -> Response {
     match &appstate.logo {
-        Some(logo) => ([(header::CONTENT_TYPE, logo.content_type)], logo.content.clone()).into_response(),
+        Some(logo) => (
+            [(header::CONTENT_TYPE, logo.content_type)],
+            logo.content.clone(),
+        )
+            .into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -468,7 +493,10 @@ async fn handler_add_note(
 
 fn into_internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
     eprintln!("internal error: {e}");
-    (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string())
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal error".to_string(),
+    )
 }
 
 /// Note length from the required content-length header, the body must match it exactly
@@ -505,7 +533,10 @@ fn clamp_setting(value: u32, min: u32, max: u32) -> u32 {
 }
 
 /// Note `(expires_after, remaining_views)` from headers, clamped to the server limits
-fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32), (StatusCode, String)> {
+fn note_settings(
+    appstate: &AppState,
+    headers: &HeaderMap,
+) -> Result<(u32, u32), (StatusCode, String)> {
     fn header_to_u32(h: Option<&header::HeaderValue>) -> Result<u32, (StatusCode, String)> {
         Ok(match h {
             Some(v) => v
@@ -531,8 +562,14 @@ fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32),
 }
 
 /// Notes bigger than `max_note_size_without_totp` require a valid TOTP code
-fn check_totp(appstate: &AppState, peer: SocketAddr, headers: &HeaderMap, len: usize) -> Result<(), Response> {
-    let (Some(totp), Some(max_len)) = (&appstate.totp, appstate.config.max_note_size_without_totp) else {
+fn check_totp(
+    appstate: &AppState,
+    peer: SocketAddr,
+    headers: &HeaderMap,
+    len: usize,
+) -> Result<(), Response> {
+    let (Some(totp), Some(max_len)) = (&appstate.totp, appstate.config.max_note_size_without_totp)
+    else {
         return Ok(());
     };
     if len <= max_len {
@@ -544,13 +581,19 @@ fn check_totp(appstate: &AppState, peer: SocketAddr, headers: &HeaderMap, len: u
         .map_err(|err| into_internal_error(err).into_response())?
         .as_secs();
     let ip = client_ip(appstate, peer, headers);
-    let verified = totp.lock().unwrap().verify(ip, code, unix_secs, Instant::now());
+    let verified = totp
+        .lock()
+        .unwrap()
+        .verify(ip, code, unix_secs, Instant::now());
     verified.map_err(|rejected| match rejected {
         totp::Rejected::Missing => (StatusCode::FORBIDDEN, "totp code required").into_response(),
         totp::Rejected::Invalid => (StatusCode::FORBIDDEN, "invalid totp code").into_response(),
         totp::Rejected::TooManyFailures(retry_after) => (
             StatusCode::TOO_MANY_REQUESTS,
-            [(header::RETRY_AFTER, retry_after.as_secs_f64().ceil().to_string())],
+            [(
+                header::RETRY_AFTER,
+                retry_after.as_secs_f64().ceil().to_string(),
+            )],
             "too many invalid totp codes, retry later",
         )
             .into_response(),
@@ -668,8 +711,14 @@ async fn handler_read_note(
             (header::CONTENT_LENGTH, len.to_string()),
             // A cached copy would outlive the note views limit and expiration
             (header::CACHE_CONTROL, "no-store".to_string()),
-            (HeaderName::from_static(X_EXPIRES_AFTER), header_value(content.expires_after)),
-            (HeaderName::from_static(X_REMAINING_VIEWS), header_value(content.remaining_views)),
+            (
+                HeaderName::from_static(X_EXPIRES_AFTER),
+                header_value(content.expires_after),
+            ),
+            (
+                HeaderName::from_static(X_REMAINING_VIEWS),
+                header_value(content.remaining_views),
+            ),
         ],
         body,
     ))

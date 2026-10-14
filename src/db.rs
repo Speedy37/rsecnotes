@@ -187,10 +187,7 @@ impl Database {
     }
 
     /// File store of the slot a note of `data_len` bytes would go to, None if stored in memory
-    pub fn file_store(
-        &mut self,
-        data_len: usize,
-    ) -> Result<Option<Arc<FileStore>>, &'static str> {
+    pub fn file_store(&mut self, data_len: usize) -> Result<Option<Arc<FileStore>>, &'static str> {
         let note_memory_usage = note_memory_usage(data_len);
         let (_slot_idx, slot) =
             Self::slot_mut(&mut self.slots, note_memory_usage).ok_or("note too big")?;

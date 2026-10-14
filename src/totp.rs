@@ -39,7 +39,11 @@ fn base32_encode(bytes: &[u8]) -> String {
 
 /// Case insensitive, ignoring spaces (as secrets are often shown in groups) and padding
 fn base32_decode(s: &str) -> Option<Vec<u8>> {
-    let mut s: String = s.trim_end_matches('=').chars().filter(|c| *c != ' ').collect();
+    let mut s: String = s
+        .trim_end_matches('=')
+        .chars()
+        .filter(|c| *c != ' ')
+        .collect();
     s.make_ascii_uppercase();
     base32::decode(BASE32, &s)
 }
@@ -60,7 +64,10 @@ impl TotpSecret {
 
     /// Link added to authenticator apps, also as a QR code
     pub fn otpauth_uri(&self) -> String {
-        format!("otpauth://totp/rsecnotes?secret={}&issuer=rsecnotes&algorithm=SHA256", self.base32())
+        format!(
+            "otpauth://totp/rsecnotes?secret={}&issuer=rsecnotes&algorithm=SHA256",
+            self.base32()
+        )
     }
 }
 
@@ -87,7 +94,9 @@ impl<'de> Deserialize<'de> for TotpSecret {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(de::Error::custom)
     }
 }
 
@@ -130,7 +139,12 @@ pub struct Totp {
 impl Totp {
     /// Invalid codes are limited to `max_client_failures` per client and `max_failures` in total over
     /// `failures_period`, all non zero
-    pub fn new(secret: TotpSecret, max_client_failures: u32, max_failures: u32, failures_period: Duration) -> Self {
+    pub fn new(
+        secret: TotpSecret,
+        max_client_failures: u32,
+        max_failures: u32,
+        failures_period: Duration,
+    ) -> Self {
         Self {
             secret,
             client_failures: RateLimiter::new(max_client_failures, 1, failures_period),
@@ -139,7 +153,13 @@ impl Totp {
     }
 
     /// Accept `code` from `ip` at `unix_secs`, invalid codes consume the failures budgets
-    pub fn verify(&mut self, ip: IpAddr, code: Option<&str>, unix_secs: u64, now: Instant) -> Result<(), Rejected> {
+    pub fn verify(
+        &mut self,
+        ip: IpAddr,
+        code: Option<&str>,
+        unix_secs: u64,
+        now: Instant,
+    ) -> Result<(), Rejected> {
         let code = code.ok_or(Rejected::Missing)?;
         let wait = [
             self.client_failures.check(ip, 0, now),
@@ -165,7 +185,9 @@ impl Totp {
         if code.len() != DIGITS || !code.bytes().all(|c| c.is_ascii_digit()) {
             return false;
         }
-        let Ok(code) = code.parse::<u32>() else { return false };
+        let Ok(code) = code.parse::<u32>() else {
+            return false;
+        };
         let current = unix_secs / STEP_SECS;
         // Every step is computed, the time taken does not tell which one matched
         let mut matched = false;
@@ -196,7 +218,12 @@ mod tests {
     const FAILURES_PERIOD: Duration = Duration::from_secs(600);
 
     fn new_totp() -> Totp {
-        Totp::new(rfc_secret(), MAX_CLIENT_FAILURES, MAX_FAILURES, FAILURES_PERIOD)
+        Totp::new(
+            rfc_secret(),
+            MAX_CLIENT_FAILURES,
+            MAX_FAILURES,
+            FAILURES_PERIOD,
+        )
     }
 
     fn code(secret: &TotpSecret, unix_secs: u64) -> String {
@@ -218,8 +245,14 @@ mod tests {
     #[test]
     fn base32() {
         assert_eq!(base32_encode(b"Hello!\xDE\xAD\xBE\xEF"), "JBSWY3DPEHPK3PXP");
-        assert_eq!(base32_decode("JBSWY3DPEHPK3PXP").unwrap(), b"Hello!\xDE\xAD\xBE\xEF");
-        assert_eq!(base32_decode("jbsw y3dp ehpk 3pxp").unwrap(), b"Hello!\xDE\xAD\xBE\xEF");
+        assert_eq!(
+            base32_decode("JBSWY3DPEHPK3PXP").unwrap(),
+            b"Hello!\xDE\xAD\xBE\xEF"
+        );
+        assert_eq!(
+            base32_decode("jbsw y3dp ehpk 3pxp").unwrap(),
+            b"Hello!\xDE\xAD\xBE\xEF"
+        );
         assert_eq!(base32_decode("MZXW6===").unwrap(), b"foo");
         assert_eq!(base32_decode("MZXW1"), None);
         let secret = TotpSecret::generate();
@@ -229,7 +262,11 @@ mod tests {
     #[test]
     fn secret_parsing() {
         assert!("JBSWY3DPEHPK3PXP".parse::<TotpSecret>().is_err());
-        assert!("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP".parse::<TotpSecret>().is_ok());
+        assert!(
+            "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+                .parse::<TotpSecret>()
+                .is_ok()
+        );
         assert!("not base32!".parse::<TotpSecret>().is_err());
         assert_eq!(format!("{:?}", rfc_secret()), "<redacted>");
     }
@@ -243,12 +280,21 @@ mod tests {
         // The previous, current and next steps are accepted, even several times
         for _ in 0..2 {
             for step in [t - 30, t, t + 30] {
-                assert_eq!(totp.verify(ip, Some(&code(&totp.secret, step)), t, now), Ok(()));
+                assert_eq!(
+                    totp.verify(ip, Some(&code(&totp.secret, step)), t, now),
+                    Ok(())
+                );
             }
         }
         // Too old or too early
-        assert_eq!(totp.verify(ip, Some(&code(&totp.secret, t - 60)), t, now), Err(Rejected::Invalid));
-        assert_eq!(totp.verify(ip, Some(&code(&totp.secret, t + 60)), t, now), Err(Rejected::Invalid));
+        assert_eq!(
+            totp.verify(ip, Some(&code(&totp.secret, t - 60)), t, now),
+            Err(Rejected::Invalid)
+        );
+        assert_eq!(
+            totp.verify(ip, Some(&code(&totp.secret, t + 60)), t, now),
+            Err(Rejected::Invalid)
+        );
     }
 
     #[test]
@@ -259,10 +305,23 @@ mod tests {
         let valid = code(&rfc_secret(), t);
         let mut totp = new_totp();
         assert_eq!(totp.verify(ip, None, t, now), Err(Rejected::Missing));
-        let codes = ["", "12345", "1234567", "+12345", " 12345", "١٢٣٤٥٦", &format!("{valid} "), &format!("0{valid}")];
+        let codes = [
+            "",
+            "12345",
+            "1234567",
+            "+12345",
+            " 12345",
+            "١٢٣٤٥٦",
+            &format!("{valid} "),
+            &format!("0{valid}"),
+        ];
         for code in codes {
             let mut totp = new_totp();
-            assert_eq!(totp.verify(ip, Some(code), t, now), Err(Rejected::Invalid), "{code:?}");
+            assert_eq!(
+                totp.verify(ip, Some(code), t, now),
+                Err(Rejected::Invalid),
+                "{code:?}"
+            );
         }
     }
 
@@ -275,15 +334,23 @@ mod tests {
         let valid = code(&totp.secret, t);
         let wrong = format!("{:06}", (valid.parse::<u32>().unwrap() + 1) % 1_000_000);
         for _ in 0..MAX_CLIENT_FAILURES {
-            assert_eq!(totp.verify(ip, Some(&wrong), t, now), Err(Rejected::Invalid));
+            assert_eq!(
+                totp.verify(ip, Some(&wrong), t, now),
+                Err(Rejected::Invalid)
+            );
         }
         // Even a valid code is refused, without consuming it
-        let wait = Err(Rejected::TooManyFailures(FAILURES_PERIOD / MAX_CLIENT_FAILURES));
+        let wait = Err(Rejected::TooManyFailures(
+            FAILURES_PERIOD / MAX_CLIENT_FAILURES,
+        ));
         assert_eq!(totp.verify(ip, Some(&valid), t, now), wait);
         // Other clients share the global budget
         for i in MAX_CLIENT_FAILURES..MAX_FAILURES {
             let other = IpAddr::V4(Ipv4Addr::new(10, 0, 0, i as u8));
-            assert_eq!(totp.verify(other, Some(&wrong), t, now), Err(Rejected::Invalid));
+            assert_eq!(
+                totp.verify(other, Some(&wrong), t, now),
+                Err(Rejected::Invalid)
+            );
         }
         let other: IpAddr = "10.0.1.1".parse().unwrap();
         let wait = Err(Rejected::TooManyFailures(FAILURES_PERIOD / MAX_FAILURES));
