@@ -253,6 +253,7 @@ label > span {
 	color: color-mix(in srgb, #ffa18a var(--dark-percent), #bb3b1b);
 }
 .copy > svg {
+	fill: var(--text-color);
 	scale: 1.25;
 	vertical-align: middle;
 }

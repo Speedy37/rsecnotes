@@ -11,7 +11,7 @@ function buildSettingsStatus(remaining_views: number, expires_after: number, bVi
 
 function render_copy_svg() {
 	let svg = document.createElement("div");
-	svg.innerHTML = `<svg width="24" height="24"><path d="M18.984 21V6.984H8.016V21h10.968zm0-15.984q.797 0 1.407.586T21 6.984V21q0 .797-.61 1.406t-1.406.61H8.016q-.797 0-1.407-.61T6 21V6.984q0-.796.61-1.382t1.406-.586h10.968zm-3-4.032V3h-12v14.016H2.016V3q0-.797.586-1.406t1.382-.61h12z" style="fill: var(--text-color);"></path></svg>`;
+	svg.innerHTML = `<svg width="24" height="24"><path d="M18.984 21V6.984H8.016V21h10.968zm0-15.984q.797 0 1.407.586T21 6.984V21q0 .797-.61 1.406t-1.406.61H8.016q-.797 0-1.407-.61T6 21V6.984q0-.796.61-1.382t1.406-.586h10.968zm-3-4.032V3h-12v14.016H2.016V3q0-.797.586-1.406t1.382-.61h12z"></path></svg>`;
 	return svg.firstElementChild;
 }
 

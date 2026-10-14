@@ -253,6 +253,7 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         .route("/config", get(handler_config))
         .route("/notes", post(handler_add_note))
         .route("/notes/{note_id}", get(handler_read_note))
+        .layer(axum::middleware::map_response(set_security_headers))
         .with_state(appstate.clone());
 
     let listener = tokio::net::TcpListener::bind((
@@ -291,6 +292,21 @@ const X_REMAINING_VIEWS: &str = "x-note-remaining-views";
 
 fn into_bad_request(e: impl ToString) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, e.to_string())
+}
+
+/// Only same origin resources, plus data URIs for the embedded font, logo and QR code image
+const CONTENT_SECURITY_POLICY: header::HeaderValue = header::HeaderValue::from_static(
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src data:; \
+     connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+);
+
+async fn set_security_headers(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY);
+    // The page URL holds the note decryption key
+    headers.insert(header::REFERRER_POLICY, header::HeaderValue::from_static("no-referrer"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
+    response
 }
 
 async fn handler_static<S: StaticFile>() -> impl IntoResponse {
