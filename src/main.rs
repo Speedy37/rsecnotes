@@ -499,6 +499,8 @@ async fn handler_read_note(
         [
             (header::CONTENT_TYPE, "application/octet-stream".to_string()),
             (header::CONTENT_LENGTH, len.to_string()),
+            // A cached copy would outlive the note views limit and expiration
+            (header::CACHE_CONTROL, "no-store".to_string()),
             (HeaderName::from_static(X_EXPIRES_AFTER), header_value(content.expires_after)),
             (HeaderName::from_static(X_REMAINING_VIEWS), header_value(content.remaining_views)),
         ],
