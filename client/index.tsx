@@ -199,6 +199,9 @@ let server_config = {
 	min_expires_after: 0,
 	/// Maximal number of seconds before this note is removed, 0 for no limits
 	max_expires_after: 0,
+
+	/// A logo is served at ./logo
+	logo: false,
 };
 
 function render_new_note() {
@@ -628,13 +631,20 @@ async function main() {
 	const page_url = new URL(document.location.href);
 	const note_id = page_url.searchParams.get("note");
 	const keyb64 = page_url.hash.substring(1);
-	if (!note_id || !keyb64) {
-		let res = await fetch("./config");
+	const config = fetch("./config").then(async (res) => {
 		server_config = await res.json();
+		if (server_config.logo) render_logo();
+	});
+	if (!note_id || !keyb64) {
+		await config;
 		render_new_note();
 		return;
 	}
 	render_consume(note_id, keyb64);
+}
+
+function render_logo() {
+	document.getElementById("rsecnotes")?.after(<img id="logo" src="logo" alt="" />);
 }
 
 function render_theme() {

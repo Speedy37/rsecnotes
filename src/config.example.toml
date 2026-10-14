@@ -64,4 +64,6 @@ max_files = 5
 default_expires_after = "1d"
 # Number of views before this note is removed, 0 for never
 default_remaining_views = 1
+# Image (svg, png, jpg, webp or gif) shown at the right of the title, loaded at startup
+#logo = "logo.svg"
 

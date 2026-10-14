@@ -51,6 +51,14 @@ h1 {
 	grid-template-columns: auto 1fr auto;
 	align-items: center;
 }
+/* Scaled down to the icon height, box included, in the same box style as fieldset.box */
+#logo {
+	box-sizing: border-box;
+	max-height: 64px;
+	padding: 0.5rem 0.75rem;
+	border: 2px solid color-mix(in srgb, var(--border-color) 40%, var(--bg-color));
+	border-radius: 0.5rem;
+}
 #rsecnotes {
 	font-family: "Alfa Slab One", serif;
 	font-size: 3em;

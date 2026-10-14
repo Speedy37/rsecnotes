@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    body::Body,
+    body::{Body, Bytes},
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, HeaderName, StatusCode, header},
     response::{IntoResponse, Response},
@@ -110,6 +110,9 @@ struct ConfigFileClient {
 
     /// Number of views before this note is removed, 0 for never
     pub default_remaining_views: u32,
+
+    /// Image (svg, png, jpg, webp or gif) shown at the right of the title, none if absent
+    pub logo: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -148,10 +151,35 @@ pub struct PublicConfig {
 
     /// Maximal number of seconds before this note is removed, 0 for no limits, server enforced
     pub max_expires_after: u32,
+
+    /// A logo is served at /logo
+    pub logo: bool,
+}
+
+struct Logo {
+    content_type: &'static str,
+    content: Bytes,
+}
+
+impl Logo {
+    fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or_default();
+        let content_type = match ext.to_ascii_lowercase().as_str() {
+            "svg" => "image/svg+xml",
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => anyhow::bail!("logo: {path:?} must be a svg, png, jpg, webp or gif image"),
+        };
+        let content = fs::read(path).map_err(|err| anyhow::anyhow!("logo: {path:?}: {err}"))?;
+        Ok(Self { content_type, content: content.into() })
+    }
 }
 
 struct AppState {
     config: PublicConfig,
+    logo: Option<Logo>,
     db: Mutex<Database>,
     rate_limiter: Option<Mutex<RateLimiter>>,
     client_ip_header: Option<HeaderName>,
@@ -228,8 +256,13 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         }
         None => (None, None),
     };
+    let logo = match &config.client_settings.logo {
+        Some(path) => Some(Logo::load(path)?),
+        None => None,
+    };
     let appstate = Arc::new(AppState {
         config: PublicConfig {
+            logo: logo.is_some(),
             max_note_size: max_note_size.bytes,
             max_files: config.client_settings.max_files,
             default_expires_after: config.client_settings.default_expires_after.seconds,
@@ -239,6 +272,7 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             min_expires_after: config.server_settings.min_expires_after.seconds,
             max_expires_after: config.server_settings.max_expires_after.seconds,
         },
+        logo,
         db: Mutex::new(db),
         rate_limiter,
         client_ip_header,
@@ -250,6 +284,7 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         .route(IndexCss::ROUTE, get(handler_static::<IndexCss>))
         .route(IndexJs::ROUTE, get(handler_static::<IndexJs>))
         .route(IconSvg::ROUTE, get(handler_static::<IconSvg>))
+        .route("/logo", get(handler_logo))
         .route("/config", get(handler_config))
         .route("/notes", post(handler_add_note))
         .route("/notes/{note_id}", get(handler_read_note))
@@ -311,6 +346,13 @@ async fn set_security_headers(mut response: Response) -> Response {
 
 async fn handler_static<S: StaticFile>() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, S::CONTENT_TYPE)], S::CONTENT)
+}
+
+async fn handler_logo(State(appstate): State<Arc<AppState>>) -> Response {
+    match &appstate.logo {
+        Some(logo) => ([(header::CONTENT_TYPE, logo.content_type)], logo.content.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn handler_config(State(appstate): State<Arc<AppState>>) -> Json<PublicConfig> {
