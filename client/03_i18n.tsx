@@ -161,6 +161,62 @@ const i18n = {
 		en: "About",
 		fr: "À propos",
 	},
+	About_title: {
+		en: "About rsecnotes",
+		fr: "À propos de rsecnotes",
+	},
+	about_desc_jsx: {
+		en: () => (
+			<p>rsecnotes lets you share notes, files and credentials through a link. They are encrypted in your browser before being sent, so only the people you give the link to can read them. Inspired by <a href="https://github.com/cupcakearmy/cryptgeon" target="_blank">cryptgeon</a>.</p>
+		),
+		fr: () => (
+			<p>rsecnotes permet de partager des notes, fichiers et identifiants par un lien. Ils sont chiffrés dans votre navigateur avant d'être envoyés, seules les personnes à qui vous donnez le lien peuvent donc les lire. Inspiré de <a href="https://github.com/cupcakearmy/cryptgeon" target="_blank">cryptgeon</a>.</p>
+		),
+	},
+	How_it_works: {
+		en: "How it works",
+		fr: "Fonctionnement",
+	},
+	about_steps: {
+		en: [
+			"Your browser generates a random key and encrypts the note, its files and credentials with AES-256-GCM.",
+			"The server only receives the encrypted note, without the key, so it cannot read it.",
+			"The key is added to the share link after the #, a part of the link that browsers never send to the server.",
+			"The server keeps the encrypted note in memory, or on disk encrypted again with a key it only keeps in memory. It destroys the note after its last allowed view or when it expires, and earlier when it restarts or needs space for newer notes.",
+			"Anyone with the full link can read the note: share it through a channel you trust.",
+		],
+		fr: [
+			"Votre navigateur génère une clé aléatoire et chiffre la note, ses fichiers et identifiants avec AES-256-GCM.",
+			"Le serveur ne reçoit que la note chiffrée, sans la clé, il ne peut donc pas la lire.",
+			"La clé est ajoutée au lien de partage après le #, une partie du lien que les navigateurs n'envoient jamais au serveur.",
+			"Le serveur garde la note chiffrée en mémoire, ou sur disque chiffrée une seconde fois avec une clé qu'il ne garde qu'en mémoire. Il détruit la note après sa dernière vue autorisée ou à son expiration, et plus tôt s'il redémarre ou a besoin de place pour des notes plus récentes.",
+			"Toute personne ayant le lien complet peut lire la note : partagez-le par un canal de confiance.",
+		],
+	},
+	Why_aes_gcm: {
+		en: "Why AES-256-GCM?",
+		fr: "Pourquoi AES-256-GCM ?",
+	},
+	about_crypto: {
+		en: [
+			"AES-256-GCM is the strongest authenticated symmetric encryption currently supported by the browsers' Web Crypto API.",
+			"GCM authenticates the note: if the encrypted note is altered, decryption fails instead of showing altered content.",
+			"Each note has its own key, and a random 96-bit nonce (IV) stored with it: a value used only once, so that encrypting the same content twice never gives the same result.",
+			"Encryption is done by the Web Crypto API built into your browser, not by a JavaScript library: it is maintained by the browser vendors, often hardware accelerated and resistant to timing attacks.",
+			"The note is padded before encryption, so the server only knows its approximate size.",
+		],
+		fr: [
+			"AES-256-GCM est le chiffrement symétrique authentifié le plus robuste actuellement pris en charge par l'API Web Crypto des navigateurs.",
+			"GCM authentifie la note : si la note chiffrée est modifiée, le déchiffrement échoue au lieu d'afficher un contenu altéré.",
+			"Chaque note a sa propre clé, et un nonce (IV) aléatoire de 96 bits stocké avec elle : une valeur utilisée une seule fois, pour que chiffrer deux fois le même contenu ne donne jamais le même résultat.",
+			"Le chiffrement est effectué par l'API Web Crypto intégrée à votre navigateur, et non par une bibliothèque JavaScript : elle est maintenue par les éditeurs de navigateurs, souvent accélérée matériellement et résistante aux attaques temporelles.",
+			"La taille de la note est arrondie avant chiffrement (padding), le serveur n'en connaît donc que la taille approximative.",
+		],
+	},
+	Close: {
+		en: "Close",
+		fr: "Fermer",
+	},
 	Show_sources: {
 		en: "Show sources",
 		fr: "Voir les sources",

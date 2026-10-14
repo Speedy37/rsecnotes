@@ -675,10 +675,32 @@ function render_theme() {
 }
 
 
+/// Shown over the page, so opening it never discards a note being written or read
+let about_dialog: HTMLDialogElement | null = null;
+function show_about() {
+	if (!about_dialog) {
+		about_dialog = render_about();
+		document.body.append(about_dialog);
+	}
+	about_dialog.showModal();
+}
+
 function render_about() {
-	return <div id="about_block">
-		<p>A secure sharing note and/or file(s) service, inspired by cryptgeon.</p>
-	</div>
+	const dialog: HTMLDialogElement = <dialog id="about" onclick={(e) => {
+		// The content fills the dialog, so a click on the dialog itself is a click on the backdrop
+		if (e.target === dialog) dialog.close();
+	}}>
+		<div>
+			<h2>{tr(i18n.About_title)}</h2>
+			{tr(i18n.about_desc_jsx)()}
+			<h3>{tr(i18n.How_it_works)}</h3>
+			<ol>{...tr(i18n.about_steps).map((step) => <li>{step}</li>)}</ol>
+			<h3>{tr(i18n.Why_aes_gcm)}</h3>
+			<ul>{...tr(i18n.about_crypto).map((item) => <li>{item}</li>)}</ul>
+			<button autofocus onclick={() => dialog.close()}>{tr(i18n.Close)}</button>
+		</div>
+	</dialog>;
+	return dialog;
 }
 
 function render_git_svg() {
@@ -695,10 +717,7 @@ function render_info_svg() {
 
 function render_nav() {
 	return <nav>
-		<a className="about" href="#about" title={tr(i18n.About)} onclick={(e) => {
-			e.preventDefault();
-			swap_main(render_about());
-		}}>{render_info_svg()}</a>
+		<button className="about" title={tr(i18n.About)} onclick={show_about}>{render_info_svg()}</button>
 		<a className="git" href="https://github.com/Speedy37/rsecnotes" target="_blank" title={tr(i18n.Show_sources)}>{render_git_svg()}</a>
 	</nav>
 }

@@ -137,7 +137,19 @@ nav {
 	align-items: center;
 	gap: 20px;
 }
-nav > a > svg {
+/* Icon only, like the sources link */
+nav > button {
+	margin: 0;
+	padding: 0;
+	border: none;
+	background: none;
+	line-height: 0;
+}
+nav > button:hover:not(:disabled) {
+	background: none;
+}
+nav > a > svg,
+nav > button > svg {
 	fill: var(--text-color);
 	vertical-align: middle;
 }
@@ -521,6 +533,38 @@ fieldset > .pwd {
 .multi-link {
 	text-decoration: none;
 	/* remove default underline */
+}
+
+/* Same box style as fieldset.box, the inner div fills it so clicks on the dialog itself are on the backdrop */
+#about {
+	box-sizing: border-box;
+	width: min(640px, 100% - 2rem);
+	padding: 0;
+	color: var(--text-color);
+	background: var(--bg-color);
+	border: 2px solid var(--box-border-color);
+	border-radius: 0.5rem;
+}
+#about::backdrop {
+	background: rgb(0 0 0 / 50%);
+}
+#about > div {
+	display: grid;
+	padding: 1rem 1.5rem;
+	line-height: 1.5;
+}
+#about h3 {
+	margin-bottom: 0;
+}
+#about li + li {
+	margin-top: 0.5rem;
+}
+#about a {
+	color: var(--primary-blue);
+	text-decoration: underline;
+}
+#about button {
+	justify-self: end;
 }
 
 #btn_theme {
