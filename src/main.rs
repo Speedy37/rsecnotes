@@ -185,25 +185,8 @@ struct AppState {
     client_ip_header: Option<HeaderName>,
 }
 
-trait StaticFile {
-    const ROUTE: &'static str;
-    const CONTENT_TYPE: &'static [u8];
-    const CONTENT: &'static [u8];
-}
-macro_rules! static_file {
-    ($name:ident, $content_type:expr, $route:expr) => {
-        struct $name;
-        impl StaticFile for $name {
-            const ROUTE: &'static str = $route;
-            const CONTENT_TYPE: &'static [u8] = $content_type;
-            const CONTENT: &'static [u8] = include_bytes!(concat!("../public", $route));
-        }
-    };
-}
-static_file!(IndexHtml, b"text/html", "/index.html");
-static_file!(IndexCss, b"text/css", "/index.css");
-static_file!(IndexJs, b"text/javascript", "/index.js");
-static_file!(IconSvg, b"image/svg+xml", "/icon.svg");
+/// The whole client, with index.css, index.js and icon.svg inlined by build.rs
+const INDEX_HTML: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html"));
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -279,11 +262,8 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
     });
 
     let app = Router::new()
-        .route("/", get(handler_static::<IndexHtml>))
-        .route(IndexHtml::ROUTE, get(handler_static::<IndexHtml>))
-        .route(IndexCss::ROUTE, get(handler_static::<IndexCss>))
-        .route(IndexJs::ROUTE, get(handler_static::<IndexJs>))
-        .route(IconSvg::ROUTE, get(handler_static::<IconSvg>))
+        .route("/", get(handler_index))
+        .route("/index.html", get(handler_index))
         .route("/logo", get(handler_logo))
         .route("/config", get(handler_config))
         .route("/notes", post(handler_add_note))
@@ -329,11 +309,16 @@ fn into_bad_request(e: impl ToString) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, e.to_string())
 }
 
-/// Only same origin resources, plus data URIs for the embedded font, logo and QR code image
-const CONTENT_SECURITY_POLICY: header::HeaderValue = header::HeaderValue::from_static(
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src data:; \
+/// Only the index.html inlined script and style (by hash, see build.rs), same origin resources,
+/// plus data URIs for the embedded font, icon and QR code image
+const CONTENT_SECURITY_POLICY: header::HeaderValue = header::HeaderValue::from_static(concat!(
+    "default-src 'none'; script-src ",
+    env!("CSP_SCRIPT_HASH"),
+    "; style-src ",
+    env!("CSP_STYLE_HASH"),
+    "; img-src 'self' data:; font-src data:; \
      connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-);
+));
 
 async fn set_security_headers(mut response: Response) -> Response {
     let headers = response.headers_mut();
@@ -344,8 +329,8 @@ async fn set_security_headers(mut response: Response) -> Response {
     response
 }
 
-async fn handler_static<S: StaticFile>() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, S::CONTENT_TYPE)], S::CONTENT)
+async fn handler_index() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "text/html")], INDEX_HTML)
 }
 
 async fn handler_logo(State(appstate): State<Arc<AppState>>) -> Response {
