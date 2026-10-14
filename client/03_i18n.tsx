@@ -84,8 +84,8 @@ const i18n = {
 		fr: "Combien de fois cette note pourra être vu",
 	},
 	Max_duration: {
-		en: "Expires In (minutes)",
-		fr: "Expire dans (minutes)",
+		en: "Expires in",
+		fr: "Expire dans",
 	},
 	Max_duration_desc: {
 		en: "How long before this note expires",

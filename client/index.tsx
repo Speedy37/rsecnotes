@@ -230,14 +230,47 @@ function render_new_note() {
 		input_status.textContent = `Note size: ${total_len_h} / ${max_note_size_h}.`;
 		if (doesnt_fit) input_status.textContent += ` Too big, remove some contents.`;
 		input_status.className = doesnt_fit ? "error" : "";
-		let remaining_views = +input_remaining_views.value;
-		let expires_after = +input_expires_after.value * 60;
-		if (!Number.isSafeInteger(remaining_views)) remaining_views = 1;
-		if (!Number.isSafeInteger(expires_after)) expires_after = 0;
-		if (remaining_views === 0) remaining_views = -1;
-		if (expires_after === 0) expires_after = -1;
-		input_settings_status.textContent = buildSettingsStatus(remaining_views, expires_after);
-		input_settings_status.style.all;
+		const { remaining_views, expires_after } = share_settings();
+		// The status uses -1 for never
+		input_settings_status.textContent = buildSettingsStatus(remaining_views || -1, expires_after || -1);
+	}
+
+	const { min_expires_after, max_expires_after, min_remaining_views, max_remaining_views } = server_config;
+	const duration_units = [
+		{ secs: 60, label: i18n.minutes },
+		{ secs: 3600, label: i18n.hours },
+		{ secs: 86400, label: i18n.days },
+	].filter((unit) => unit.secs === 60 || max_expires_after <= 0 || unit.secs <= max_expires_after);
+	/// Shown as a number of the largest unit it is a multiple of, minutes rounded up otherwise
+	let default_expires_after = server_config.default_expires_after || 86400;
+	if (max_expires_after > 0) default_expires_after = Math.min(default_expires_after, max_expires_after);
+	default_expires_after = Math.max(default_expires_after, min_expires_after, 60);
+	const default_unit = duration_units.findLast((unit) => default_expires_after % unit.secs === 0) ?? duration_units[0];
+
+	/// Settings sent to the server, 0 for never, clamped like the server does
+	function share_settings() {
+		let remaining_views = 0;
+		if (input_views_checkbox.checked) {
+			remaining_views = Math.max(Math.floor(+input_remaining_views.value) || 1, 1, min_remaining_views);
+			if (max_remaining_views > 0) remaining_views = Math.min(remaining_views, max_remaining_views);
+		}
+		let expires_after = 0;
+		if (input_expires_checkbox.checked) {
+			expires_after = Math.max(Math.floor(+input_expires_after.value) || 1, 1) * +input_expires_unit.value;
+			expires_after = Math.max(expires_after, min_expires_after);
+			if (max_expires_after > 0) expires_after = Math.min(expires_after, max_expires_after);
+		}
+		return { remaining_views, expires_after };
+	}
+
+	/// Inputs follow their checkbox, and the duration bounds its unit
+	function render_settings() {
+		input_remaining_views.disabled = !input_views_checkbox.checked;
+		input_expires_after.disabled = input_expires_unit.disabled = !input_expires_checkbox.checked;
+		const unit = +input_expires_unit.value;
+		input_expires_after.min = Math.max(1, Math.ceil(min_expires_after / unit)).toString();
+		input_expires_after.max = max_expires_after > 0 ? Math.max(1, Math.floor(max_expires_after / unit)).toString() : "";
+		renderNoteStatus();
 	}
 
 	function renderFiles() {
@@ -274,10 +307,7 @@ function render_new_note() {
 
 			let note_id = await post_note(
 				blob,
-				{
-					remaining_views: +input_remaining_views.value,
-					expires_after: +input_expires_after.value * 60,
-				},
+				share_settings(),
 				(loaded, total) => {
 					const percent = (loaded / total) * 100;
 					input_createbtn.textContent = `${loaded} / ${total}`
@@ -299,8 +329,11 @@ function render_new_note() {
 	let input_filedrop: HTMLDivElement;
 	let input_file: HTMLInputElement;
 	let input_filelist: HTMLDivElement;
+	let input_views_checkbox: HTMLInputElement;
 	let input_remaining_views: HTMLInputElement;
+	let input_expires_checkbox: HTMLInputElement;
 	let input_expires_after: HTMLInputElement;
+	let input_expires_unit: HTMLSelectElement;
 	let input_createbtn: HTMLButtonElement;
 	let input_status: HTMLDivElement;
 	let input_settings_status: HTMLDivElement;
@@ -427,42 +460,42 @@ function render_new_note() {
 
 			<fieldset className="box" id="input_settings">
 				<legend>{tr(i18n.ShareSettings)}</legend>
-				<input type="checkbox"
-					checked={server_config.min_remaining_views > 0 || server_config.default_remaining_views > 0}
-					disabled={server_config.min_remaining_views > 0} />
+				{/* Unchecked is never, forced when the server has a limit */}
+				{input_views_checkbox = <input type="checkbox"
+					checked={min_remaining_views > 0 || max_remaining_views > 0 || server_config.default_remaining_views > 0}
+					disabled={min_remaining_views > 0 || max_remaining_views > 0}
+					onchange={render_settings} />}
 				<label htmlFor="input_remaining_views">
 					{tr(i18n.Max_views)}
 					<span>{tr(i18n.Max_views_desc)}</span>
 				</label>
-				{
-					(input_remaining_views = (
-						<input
-							id="input_remaining_views"
-							value={server_config.default_remaining_views.toString()}
-							min={server_config.min_remaining_views.toString()}
-							type="number"
-							autocomplete="off"
-						/>
-					))
-				}
-				<input type="checkbox"
-					checked={server_config.max_expires_after > 0 || server_config.default_expires_after > 0}
-					disabled={server_config.max_expires_after > 0} />
+				{input_remaining_views = <input
+					id="input_remaining_views"
+					value={Math.max(server_config.default_remaining_views, min_remaining_views, 1).toString()}
+					min={Math.max(min_remaining_views, 1).toString()}
+					max={max_remaining_views > 0 ? max_remaining_views.toString() : ""}
+					type="number"
+					autocomplete="off"
+					oninput={render_settings} />}
+				{input_expires_checkbox = <input type="checkbox"
+					checked={min_expires_after > 0 || max_expires_after > 0 || server_config.default_expires_after > 0}
+					disabled={min_expires_after > 0 || max_expires_after > 0}
+					onchange={render_settings} />}
 				<label htmlFor="input_expires_after">
 					{tr(i18n.Max_duration)}
 					<span>{tr(i18n.Max_duration_desc)}</span>
 				</label>
-				{
-					(input_expires_after = (
-						<input
-							id="input_expires_after"
-							value={server_config.default_expires_after.toString()}
-							min={server_config.min_expires_after.toString()}
-							type="number"
-							autocomplete="off"
-						/>
-					))
-				}
+				<div className="duration">
+					{input_expires_after = <input
+						id="input_expires_after"
+						value={Math.ceil(default_expires_after / default_unit.secs).toString()}
+						type="number"
+						autocomplete="off"
+						oninput={render_settings} />}
+					{input_expires_unit = <select onchange={render_settings}>
+						{...duration_units.map((unit) => <option value={unit.secs.toString()} selected={unit === default_unit}>{tr(unit.label)}</option>)}
+					</select>}
+				</div>
 			</fieldset>
 
 			{
@@ -474,6 +507,7 @@ function render_new_note() {
 			{(input_settings_status = <div id="input_settings_status"></div>)}
 		</div>
 	);
+	render_settings();
 }
 
 

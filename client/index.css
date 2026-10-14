@@ -192,6 +192,7 @@ div.error {
 button,
 textarea,
 input,
+select,
 .drop,
 .list,
 .pwd {
@@ -212,7 +213,8 @@ textarea {
 }
 
 textarea:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
 	border: 1px solid var(--focus-border-color);
 }
 /* Their border does not show focus (none, or not drawn by native checkboxes and ranges),
@@ -224,7 +226,8 @@ input[type="range"]:focus-visible {
 	outline-offset: 2px;
 }
 
-button {
+button,
+select {
 	cursor: pointer;
 }
 
@@ -312,12 +315,33 @@ label > span {
 	width: auto;
 	min-width: 0;
 }
+/* Duration and its unit share the input column, the number takes what the unit leaves */
+#input_settings > .duration {
+	display: flex;
+	gap: 0.5rem;
+	min-width: 0;
+	margin: 1rem 0.25rem 0.25rem;
+}
+.duration > * {
+	margin: 0;
+}
+.duration > input {
+	flex: 1;
+	width: auto;
+	min-width: 0;
+}
+/* Unchecked setting (never), or forced by the server */
+#input_settings :disabled {
+	cursor: default;
+	opacity: 0.5;
+}
 /* Too narrow for side by side: the input goes under its label */
 @media (max-width: 500px) {
 	#input_settings {
 		grid-template-columns: 2em minmax(0, 1fr);
 	}
-	#input_settings > input[type="number"] {
+	#input_settings > input[type="number"],
+	#input_settings > .duration {
 		grid-column: 2;
 		margin-top: 0;
 	}

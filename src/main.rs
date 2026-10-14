@@ -391,6 +391,16 @@ fn declared_len(appstate: &AppState, headers: &HeaderMap) -> Result<usize, (Stat
     Ok(len)
 }
 
+/// Clamp a note setting to `min..=max` (`max` 0 for no limit), 0 meaning never, which a maximum forbids
+fn clamp_setting(value: u32, min: u32, max: u32) -> u32 {
+    let value = value.max(min);
+    if max > 0 && (value == 0 || value > max) {
+        max
+    } else {
+        value
+    }
+}
+
 /// Note `(expires_after, remaining_views)` from headers, clamped to the server limits
 fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32), (StatusCode, String)> {
     fn header_to_u32(h: Option<&header::HeaderValue>) -> Result<u32, (StatusCode, String)> {
@@ -404,17 +414,16 @@ fn note_settings(appstate: &AppState, headers: &HeaderMap) -> Result<(u32, u32),
         })
     }
 
-    let mut expires_after = header_to_u32(headers.get(X_EXPIRES_AFTER))?;
-    expires_after = expires_after.max(appstate.config.min_expires_after);
-    if appstate.config.max_expires_after > 0 {
-        expires_after = expires_after.min(appstate.config.max_expires_after);
-    }
-
-    let mut remaining_views = header_to_u32(headers.get(X_REMAINING_VIEWS))?;
-    remaining_views = remaining_views.max(appstate.config.min_remaining_views);
-    if appstate.config.max_remaining_views > 0 {
-        remaining_views = remaining_views.min(appstate.config.max_remaining_views);
-    }
+    let expires_after = clamp_setting(
+        header_to_u32(headers.get(X_EXPIRES_AFTER))?,
+        appstate.config.min_expires_after,
+        appstate.config.max_expires_after,
+    );
+    let remaining_views = clamp_setting(
+        header_to_u32(headers.get(X_REMAINING_VIEWS))?,
+        appstate.config.min_remaining_views,
+        appstate.config.max_remaining_views,
+    );
     Ok((expires_after, remaining_views))
 }
 
@@ -542,5 +551,19 @@ mod tests {
     #[test]
     fn example_config_content() {
         let _config: ConfigFile = toml::from_slice(&EXAMPLE_CONFIG).unwrap();
+    }
+
+    #[test]
+    fn clamp_setting_limits() {
+        // No limits, 0 (never) is kept
+        assert_eq!(clamp_setting(0, 0, 0), 0);
+        assert_eq!(clamp_setting(42, 0, 0), 42);
+        // Minimum
+        assert_eq!(clamp_setting(0, 10, 0), 10);
+        assert_eq!(clamp_setting(5, 10, 0), 10);
+        // Maximum, never is not allowed
+        assert_eq!(clamp_setting(0, 0, 100), 100);
+        assert_eq!(clamp_setting(200, 0, 100), 100);
+        assert_eq!(clamp_setting(50, 10, 100), 50);
     }
 }
