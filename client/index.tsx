@@ -186,18 +186,18 @@ let server_config = {
 	max_note_size: 0,
 	/// Maximum number of files, 0 means no file allowed
 	max_files: 0,
-	/// Number of seconds before this note is removed, 0 for never
+	/// Number of seconds before this note is removed, 0 for never (only if the max is 0)
 	default_expires_after: 0,
-	/// Number of views before this note is removed, 0 for never
+	/// Number of views before this note is removed, 0 for never (only if the max is 0)
 	default_remaining_views: 0,
 
-	/// Minimal number of views before this note is removed
-	min_remaining_views: 0,
-	/// Maximal number of views before this note is removed, 0 for no limits
+	/// Minimal number of views before this note is removed, at least 1
+	min_remaining_views: 1,
+	/// Maximal number of views before this note is removed, 0 for no maximum (no views limit allowed)
 	max_remaining_views: 0,
-	/// Minimal number of seconds before this note is removed
-	min_expires_after: 0,
-	/// Maximal number of seconds before this note is removed, 0 for no limits
+	/// Minimal number of seconds before this note is removed, at least 60
+	min_expires_after: 60,
+	/// Maximal number of seconds before this note is removed, 0 for no maximum (no expiration allowed)
 	max_expires_after: 0,
 
 	/// A logo is served at ./logo
@@ -241,8 +241,12 @@ function render_new_note() {
 		{ secs: 3600, label: i18n.hours },
 		{ secs: 86400, label: i18n.days },
 	].filter((unit) => unit.secs === 60 || max_expires_after <= 0 || unit.secs <= max_expires_after);
+	// A default of never (0) shows the maximum the server would use instead, or a starting value while unchecked
+	let default_remaining_views = server_config.default_remaining_views || max_remaining_views || 1;
+	if (max_remaining_views > 0) default_remaining_views = Math.min(default_remaining_views, max_remaining_views);
+	default_remaining_views = Math.max(default_remaining_views, min_remaining_views, 1);
 	/// Shown as a number of the largest unit it is a multiple of, minutes rounded up otherwise
-	let default_expires_after = server_config.default_expires_after || 86400;
+	let default_expires_after = server_config.default_expires_after || max_expires_after || 86400;
 	if (max_expires_after > 0) default_expires_after = Math.min(default_expires_after, max_expires_after);
 	default_expires_after = Math.max(default_expires_after, min_expires_after, 60);
 	const default_unit = duration_units.findLast((unit) => default_expires_after % unit.secs === 0) ?? duration_units[0];
@@ -460,10 +464,10 @@ function render_new_note() {
 
 			<fieldset className="box" id="input_settings">
 				<legend>{tr(i18n.ShareSettings)}</legend>
-				{/* Unchecked is never, forced when the server has a limit */}
+				{/* Unchecked is never, forced when the server has a maximum */}
 				{input_views_checkbox = <input type="checkbox"
-					checked={min_remaining_views > 0 || max_remaining_views > 0 || server_config.default_remaining_views > 0}
-					disabled={min_remaining_views > 0 || max_remaining_views > 0}
+					checked={max_remaining_views > 0 || server_config.default_remaining_views > 0}
+					disabled={max_remaining_views > 0}
 					onchange={render_settings} />}
 				<label htmlFor="input_remaining_views">
 					{tr(i18n.Max_views)}
@@ -471,15 +475,15 @@ function render_new_note() {
 				</label>
 				{input_remaining_views = <input
 					id="input_remaining_views"
-					value={Math.max(server_config.default_remaining_views, min_remaining_views, 1).toString()}
+					value={default_remaining_views.toString()}
 					min={Math.max(min_remaining_views, 1).toString()}
 					max={max_remaining_views > 0 ? max_remaining_views.toString() : ""}
 					type="number"
 					autocomplete="off"
 					oninput={render_settings} />}
 				{input_expires_checkbox = <input type="checkbox"
-					checked={min_expires_after > 0 || max_expires_after > 0 || server_config.default_expires_after > 0}
-					disabled={min_expires_after > 0 || max_expires_after > 0}
+					checked={max_expires_after > 0 || server_config.default_expires_after > 0}
+					disabled={max_expires_after > 0}
 					onchange={render_settings} />}
 				<label htmlFor="input_expires_after">
 					{tr(i18n.Max_duration)}

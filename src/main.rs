@@ -68,16 +68,16 @@ struct ConfigFileServer {
     /// Reclamation for memory inside a slot is always done from oldest to newest.
     pub slots: Vec<ConfigFileSlot>,
 
-    /// Minimal number of views before this note is removed
+    /// Minimal number of views before this note is removed, at least 1
     pub min_remaining_views: u32,
 
-    /// Maximal number of views before this note is removed, 0 for no limits
+    /// Maximal number of views before this note is removed, 0 for no maximum (no views limit allowed)
     pub max_remaining_views: u32,
 
-    /// Minimal number of seconds before this note is removed
+    /// Minimal number of seconds before this note is removed, at least 1 minute
     pub min_expires_after: Duration,
 
-    /// Maximal number of seconds before this note is removed, 0 for no limits
+    /// Maximal number of seconds before this note is removed, 0 for no maximum (no expiration allowed)
     pub max_expires_after: Duration,
 
     /// Per client limits on notes creation, no limits if absent
@@ -105,10 +105,10 @@ struct ConfigFileClient {
     /// Maximum number of files, 0 means no file allowed
     pub max_files: u32,
 
-    /// Number of seconds before this note is removed, 0 for never
+    /// Number of seconds before this note is removed, 0 for never (only if the max is 0)
     pub default_expires_after: Duration,
 
-    /// Number of views before this note is removed, 0 for never
+    /// Number of views before this note is removed, 0 for never (only if the max is 0)
     pub default_remaining_views: u32,
 
     /// Image (svg, png, jpg, webp or gif) shown at the right of the title, none if absent
@@ -134,22 +134,22 @@ pub struct PublicConfig {
     /// Maximum number of files, 0 means no file allowed
     pub max_files: u32,
 
-    /// Number of seconds before this note is removed, 0 for never
+    /// Number of seconds before this note is removed, 0 for never (only if the max is 0)
     pub default_expires_after: u32,
 
-    /// Number of views before this note is removed, 0 for never
+    /// Number of views before this note is removed, 0 for never (only if the max is 0)
     pub default_remaining_views: u32,
 
-    /// Minimal number of views before this note is remove, server enforced
+    /// Minimal number of views before this note is removed, server enforced
     pub min_remaining_views: u32,
 
-    /// Maximal number of views before this note is removed, 0 for no limits, server enforced
+    /// Maximal number of views before this note is removed, 0 for no maximum, server enforced
     pub max_remaining_views: u32,
 
     /// Minimal number of seconds before this note is removed, server enforced
     pub min_expires_after: u32,
 
-    /// Maximal number of seconds before this note is removed, 0 for no limits, server enforced
+    /// Maximal number of seconds before this note is removed, 0 for no maximum, server enforced
     pub max_expires_after: u32,
 
     /// A logo is served at /logo
@@ -239,6 +239,19 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
         }
         None => (None, None),
     };
+    let server_settings = &config.server_settings;
+    let min_remaining_views = server_settings.min_remaining_views.max(MIN_REMAINING_VIEWS);
+    let max_remaining_views = server_settings.max_remaining_views;
+    let min_expires_after = server_settings.min_expires_after.seconds.max(MIN_EXPIRES_AFTER);
+    let max_expires_after = server_settings.max_expires_after.seconds;
+    anyhow::ensure!(
+        max_remaining_views == 0 || max_remaining_views >= min_remaining_views,
+        "max_remaining_views must be 0 or at least min_remaining_views ({min_remaining_views})"
+    );
+    anyhow::ensure!(
+        max_expires_after == 0 || max_expires_after >= min_expires_after,
+        "max_expires_after must be 0s or at least min_expires_after ({min_expires_after}s)"
+    );
     let logo = match &config.client_settings.logo {
         Some(path) => Some(Logo::load(path)?),
         None => None,
@@ -250,10 +263,10 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             max_files: config.client_settings.max_files,
             default_expires_after: config.client_settings.default_expires_after.seconds,
             default_remaining_views: config.client_settings.default_remaining_views,
-            min_remaining_views: config.server_settings.min_remaining_views,
-            max_remaining_views: config.server_settings.max_remaining_views,
-            min_expires_after: config.server_settings.min_expires_after.seconds,
-            max_expires_after: config.server_settings.max_expires_after.seconds,
+            min_remaining_views,
+            max_remaining_views,
+            min_expires_after,
+            max_expires_after,
         },
         logo,
         db: Mutex::new(db),
@@ -391,13 +404,18 @@ fn declared_len(appstate: &AppState, headers: &HeaderMap) -> Result<usize, (Stat
     Ok(len)
 }
 
-/// Clamp a note setting to `min..=max` (`max` 0 for no limit), 0 meaning never, which a maximum forbids
+/// Lowest `min_remaining_views`, a note is viewable at least once
+const MIN_REMAINING_VIEWS: u32 = 1;
+/// Lowest `min_expires_after` in seconds
+const MIN_EXPIRES_AFTER: u32 = 60;
+
+/// Clamp a note setting to `min..=max` (`max` 0 for no maximum).
+/// 0 means never, allowed only without a maximum, the maximum is used otherwise.
 fn clamp_setting(value: u32, min: u32, max: u32) -> u32 {
-    let value = value.max(min);
-    if max > 0 && (value == 0 || value > max) {
-        max
-    } else {
-        value
+    match value {
+        0 => max,
+        _ if max > 0 => value.clamp(min, max),
+        _ => value.max(min),
     }
 }
 
@@ -555,15 +573,16 @@ mod tests {
 
     #[test]
     fn clamp_setting_limits() {
-        // No limits, 0 (never) is kept
-        assert_eq!(clamp_setting(0, 0, 0), 0);
-        assert_eq!(clamp_setting(42, 0, 0), 42);
+        // No maximum, 0 (never) is kept whatever the minimum
+        assert_eq!(clamp_setting(0, 1, 0), 0);
+        assert_eq!(clamp_setting(0, 10, 0), 0);
+        assert_eq!(clamp_setting(42, 1, 0), 42);
         // Minimum
-        assert_eq!(clamp_setting(0, 10, 0), 10);
         assert_eq!(clamp_setting(5, 10, 0), 10);
+        assert_eq!(clamp_setting(5, 10, 100), 10);
         // Maximum, never is not allowed
-        assert_eq!(clamp_setting(0, 0, 100), 100);
-        assert_eq!(clamp_setting(200, 0, 100), 100);
+        assert_eq!(clamp_setting(0, 1, 100), 100);
+        assert_eq!(clamp_setting(200, 1, 100), 100);
         assert_eq!(clamp_setting(50, 10, 100), 50);
     }
 }

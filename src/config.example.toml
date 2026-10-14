@@ -4,13 +4,13 @@
 host = "0.0.0.0"
 # Listen port
 port = 3000
-# Minimal number of views before this note is removed
+# Minimal number of views before this note is removed, at least 1
 min_remaining_views = 1
-# Maximal number of views before this note is removed, 0 for no limits
+# Maximal number of views before this note is removed, 0 for no maximum (notes without a views limit allowed)
 max_remaining_views = 0
-# Minimal duration before this note is removed
-min_expires_after = "0s"
-# Maximal duration before this note is removed, 0s for no limits
+# Minimal duration before this note is removed, at least 1m
+min_expires_after = "1m"
+# Maximal duration before this note is removed, 0s for no maximum (notes without an expiration allowed)
 max_expires_after = "5d"
 
 ## Memory Configuration
@@ -60,9 +60,9 @@ max_size = "256.0 MB"
 
 # Maximum number of files, 0 means no file allowed
 max_files = 5
-# Duration before this note is removed, 0s for never
+# Duration before this note is removed, 0s for never (only if max_expires_after is 0s)
 default_expires_after = "1d"
-# Number of views before this note is removed, 0 for never
+# Number of views before this note is removed, 0 for never (only if max_remaining_views is 0)
 default_remaining_views = 1
 # Image (svg, png, jpg, webp or gif) shown at the right of the title, loaded at startup
 #logo = "logo.svg"
