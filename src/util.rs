@@ -293,8 +293,8 @@ mod tests {
         test_parse("0B", "0B", 0);
         test_parse("60B", "60B", 60);
         test_parse("256.0 KB", "256KB", 256 * KB);
-        test_parse("1.5MB", "1.5MB", 1 * MB + 512 * KB);
-        test_parse("1.5GB", "1.5GB", 1 * GB + 512 * MB);
+        test_parse("1.5MB", "1.5MB", MB + 512 * KB);
+        test_parse("1.5GB", "1.5GB", GB + 512 * MB);
         test_parse("64GB", "64GB", 64 * GB);
         assert_eq!(
             Size::from_str(""),

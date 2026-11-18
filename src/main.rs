@@ -774,7 +774,7 @@ mod tests {
 
     #[test]
     fn example_config_content() {
-        let _config: ConfigFile = toml::from_slice(&EXAMPLE_CONFIG).unwrap();
+        let _config: ConfigFile = toml::from_slice(EXAMPLE_CONFIG).unwrap();
     }
 
     #[test]
