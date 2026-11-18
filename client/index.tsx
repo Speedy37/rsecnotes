@@ -74,6 +74,11 @@ function render_consume(note_id: string, keyb64: string) {
 				consume_btn.style.setProperty("--progress", percent.toFixed(2) + "%");
 			});
 			let note = await decrypt(keyb64, raw_note.data);
+			// The key is no more useful (the view is consumed), it does not stay in the
+			// address bar, the session history or a reload. Kept on errors, to retry.
+			const url = new URL(document.location.href);
+			url.hash = "";
+			history.replaceState(null, "", url.href);
 			render_note(raw_note, note);
 		} catch (e) {
 			consume_btn.textContent = e instanceof Error ? e.message : `${e}`;
@@ -1011,12 +1016,26 @@ async function main() {
 		server_config = await res.json();
 		if (server_config.logo) render_logo();
 	});
-	if (!note_id || !keyb64) {
+	if (!note_id) {
 		await config;
 		render_new_note();
 		return;
 	}
+	if (!keyb64) {
+		render_missing_key();
+		return;
+	}
 	render_consume(note_id, keyb64);
+}
+
+/// The key is the link part after the #: cut when copying the link, or removed once the note was read
+function render_missing_key() {
+	swap_main(
+		<div id="consume_block">
+			<div id="missing_key" className="error">{tr(i18n.missing_key)}</div>
+		</div>
+	);
+	btn_newnote.hidden = false;
 }
 
 function render_logo() {

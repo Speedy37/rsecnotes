@@ -152,6 +152,9 @@ test("text note is readable once, then destroyed", async ({ person }) => {
 	const reader = await person();
 	await read_note(reader, link);
 	await expect(reader.page.locator("#read_note")).toHaveValue(text);
+	// Removed from the address bar and the session history once read
+	expect(reader.page.url()).not.toContain(key);
+	expect(reader.page.url()).toContain(new URL(link).search);
 	const status = reader.page.locator("#read_settings_status");
 	await expect(status).toHaveClass(/last-view/);
 	await expect(status).toHaveAttribute("role", "alert");
@@ -231,6 +234,13 @@ test("a wrong key fails without showing anything",async ({ person }) => {
 	const malformed = await person();
 	await read_note(malformed, link.replace(`#${key}`, "#not-a-key"));
 	await expect(malformed.page.locator("#consume_btn")).toHaveClass("error");
+
+	// A link without its key explains why, without fetching (consuming a view)
+	const cut = await person();
+	await cut.page.goto(link.replace(`#${key}`, ""));
+	await expect(cut.page.locator("#missing_key")).toContainText("no decryption key");
+	await expect(cut.page.locator("#consume_btn")).toHaveCount(0);
+	await expect(cut.page.locator("#btn_newnote")).toBeVisible();
 
 	const reader = await person();
 	await read_note(reader, link);

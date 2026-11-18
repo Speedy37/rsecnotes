@@ -425,6 +425,10 @@ const i18n = {
 		en: (status: number) => `Status code: ${status}`,
 		fr: (status: number) => `Code d'état : ${status}`,
 	},
+	missing_key: {
+		en: "This link has no decryption key, the part after the #. Either the link was cut when copied: ask for the full link, or the note was already read in this tab: it is not shown again.",
+		fr: "Ce lien n'a pas de clé de déchiffrement, la partie après le #. Soit le lien a été coupé lors de la copie : demandez le lien complet, soit la note a déjà été lue dans cet onglet : elle n'est pas affichée à nouveau.",
+	},
 	invalid_key: {
 		en: "Invalid link, the decryption key is malformed.",
 		fr: "Lien invalide, la clé de déchiffrement est malformée.",
