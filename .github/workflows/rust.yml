@@ -1,27 +1,82 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its previous run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  # Once, they do not depend on the OS
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable --no-self-update && rustup component add rustfmt clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt -- --check
+      # build.rs compiles the client with tsc
+      - run: npm ci
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Type check the end-to-end tests
+        run: npx tsc --noEmit -p e2e
+
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Check formatting
-      run: cargo fmt -- --check
-    - run: npm install
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - run: rustup update stable --no-self-update
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Build
+        run: cargo build --locked
+      - name: Run tests
+        run: cargo test --locked
+
+  # Chromium, Firefox and WebKit against the server, see playwright.config.ts
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable --no-self-update
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      # Built before the tests, so the server starts within the Playwright webServer timeout
+      - run: cargo build --locked
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: target/test-results/
+          retention-days: 7
