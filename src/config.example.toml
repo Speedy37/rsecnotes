@@ -12,6 +12,8 @@ max_remaining_views = 0
 min_expires_after = "1m"
 # Maximal duration before this note is removed, 0s for no maximum (notes without an expiration allowed)
 max_expires_after = "5d"
+# Uploads receiving no data for this duration are aborted, so a client can't keep one open forever
+upload_idle_timeout = "30s"
 
 ## Memory Configuration
 # Notes are put into the slot with the lowest `max_note_size` that let it fit

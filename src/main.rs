@@ -89,6 +89,14 @@ struct ConfigFileServer {
 
     /// TOTP code required to create big notes, no code if absent
     pub totp: Option<ConfigFileTotp>,
+
+    /// Uploads receiving no data for this duration are aborted, so a client can't keep one open forever
+    #[serde(default = "default_upload_idle_timeout")]
+    pub upload_idle_timeout: Duration,
+}
+
+fn default_upload_idle_timeout() -> Duration {
+    Duration { seconds: 30 }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -239,6 +247,7 @@ struct AppState {
     rate_limiter: Option<Mutex<RateLimiter>>,
     client_ip_header: Option<HeaderName>,
     totp: Option<Mutex<Totp>>,
+    upload_idle_timeout: std::time::Duration,
 }
 
 /// The whole client, with index.css, index.js and icon.svg inlined by build.rs
@@ -342,6 +351,10 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
             "totp: max_client_failures, max_failures and failures_period must be non zero"
         );
     }
+    anyhow::ensure!(
+        server_settings.upload_idle_timeout.seconds > 0,
+        "upload_idle_timeout must be non zero"
+    );
     let appstate = Arc::new(AppState {
         config: PublicConfig {
             logo: logo.is_some(),
@@ -368,6 +381,9 @@ async fn main_run(config: &ConfigFile) -> anyhow::Result<()> {
                 std::time::Duration::from_secs(totp.failures_period.seconds.into()),
             ))
         }),
+        upload_idle_timeout: std::time::Duration::from_secs(
+            server_settings.upload_idle_timeout.seconds.into(),
+        ),
     });
 
     let app = Router::new()
@@ -657,10 +673,11 @@ async fn receive_note_data(
         .unwrap()
         .file_store(len)
         .map_err(into_bad_request)?;
+    let body = with_idle_timeout(body, appstate.upload_idle_timeout);
     match file_store {
         Some(file_store) => {
             let file = file_store
-                .write(len, body.into_data_stream())
+                .write(len, body)
                 .await
                 .map_err(|err| match err.kind() {
                     std::io::ErrorKind::InvalidInput | std::io::ErrorKind::ConnectionAborted => {
@@ -671,7 +688,7 @@ async fn receive_note_data(
             Ok(NoteData::File(Arc::new(file)))
         }
         None => {
-            let data = axum::body::to_bytes(body, len)
+            let data = axum::body::to_bytes(Body::from_stream(body), len)
                 .await
                 .map_err(into_bad_request)?;
             if data.len() != len {
@@ -680,6 +697,33 @@ async fn receive_note_data(
             Ok(NoteData::Memory(data))
         }
     }
+}
+
+/// Body data, failing once no data was received for `timeout`: a total timeout would also
+/// abort big notes uploaded through slow connections
+fn with_idle_timeout(
+    body: Body,
+    timeout: std::time::Duration,
+) -> impl futures_util::Stream<Item = std::io::Result<Bytes>> + Send + Unpin + 'static {
+    use futures_util::StreamExt;
+    Box::pin(futures_util::stream::unfold(
+        Some(body.into_data_stream()),
+        move |stream| async move {
+            let mut stream = stream?;
+            match tokio::time::timeout(timeout, stream.next()).await {
+                Ok(Some(Ok(data))) => Some((Ok(data), Some(stream))),
+                Ok(Some(Err(err))) => Some((Err(std::io::Error::other(err)), None)),
+                Ok(None) => None,
+                Err(_elapsed) => Some((
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "no data received for upload_idle_timeout",
+                    )),
+                    None,
+                )),
+            }
+        },
+    ))
 }
 
 async fn handler_read_note(
