@@ -179,6 +179,19 @@ impl Database {
                 })
             })
             .collect::<std::io::Result<_>>()?;
+        // Checked at startup rather than asserted when adding a note, which would abort the server
+        for slot in &slots {
+            let biggest_note = note_memory_usage(slot.stats.max_note_size.bytes);
+            if biggest_note > slot.stats.max_memory_usage {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "slots: max_memory_usage ({}) must fit a note of max_note_size ({}) and its bookkeeping ({biggest_note})",
+                        slot.stats.max_memory_usage, slot.stats.max_note_size
+                    ),
+                ));
+            }
+        }
         slots.sort_by_key(|slot| slot.stats.max_note_size);
         Ok(Self {
             inner: DatabaseInner::default(),
@@ -475,5 +488,16 @@ mod tests {
         }
         assert!(db.file_store(1001).is_err());
         assert!(db.add_note(note(1001)).is_err());
+    }
+
+    #[test]
+    fn slots_must_fit_their_biggest_note() {
+        assert!(Database::new(&[slot(1000, 1000)]).is_err());
+        let fits = note_memory_usage(1000).bytes;
+        assert!(Database::new(&[slot(1000, fits - 1)]).is_err());
+        let mut db = Database::new(&[slot(1000, fits)]).unwrap();
+        db.add_note(note(1000)).unwrap();
+        // The oldest note is reclaimed to fit the new one
+        db.add_note(note(1000)).unwrap();
     }
 }
