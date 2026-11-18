@@ -21,6 +21,7 @@
 		"./client/02_lib.ts",
 		"./client/03_i18n.tsx",
 		"./client/04_pkg.ts",
+		"./client/04_qr.ts",
 		"./client/05_api.ts",
 		"./client/index.tsx"
 	],

@@ -1,4 +1,4 @@
-import { test as base, expect, type Browser, type BrowserContextOptions, type Page, type Request } from "@playwright/test";
+import { test as base, expect, type Browser, type BrowserContextOptions, type Locator, type Page, type Request } from "@playwright/test";
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as http from "node:http";
@@ -6,14 +6,14 @@ import * as http from "node:http";
 /// Secret of e2e/config.toml [server_settings.totp]
 const TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 
-/// Current code of an authenticator app (RFC 6238: HMAC-SHA256, 6 digits, 30 seconds)
-function totp(secret = TOTP_SECRET, unix_secs = Date.now() / 1000) {
+/// Current code of an authenticator app (RFC 6238: HMAC-SHA256 by default, 6 digits, 30 seconds)
+function totp(secret = TOTP_SECRET, unix_secs = Date.now() / 1000, algorithm = "sha256") {
 	let bits = "";
 	for (const c of secret) bits += "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c).toString(2).padStart(5, "0");
 	const key = Buffer.from(bits.match(/.{8}/g)!.map((byte) => parseInt(byte, 2)));
 	const counter = Buffer.alloc(8);
 	counter.writeBigUInt64BE(BigInt(Math.floor(unix_secs / 30)));
-	const hash = createHmac("sha256", key).update(counter).digest();
+	const hash = createHmac(algorithm, key).update(counter).digest();
 	const offset = hash[hash.length - 1] & 0xf;
 	return ((hash.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, "0");
 }
@@ -335,6 +335,118 @@ test("big notes require a TOTP code", async ({ person, baseURL }) => {
 	const reader = await person();
 	await read_note(reader, link);
 	await expect(reader.page.locator("#read_filelist")).toContainText("big.bin");
+});
+
+/// The SHA1 code shown by the page: the current one, or the previous or next one around a period change
+async function expect_totp_code(code: Locator, secret: string) {
+	// Computed asynchronously, grouped for reading
+	await expect(code).toHaveText(/^\d{3} \d{3}$/);
+	const shown = (await code.textContent())!.replace(/\s/g, "");
+	const now = Date.now() / 1000;
+	expect([-30, 0, 30].map((delta) => totp(secret, now + delta, "sha1"))).toContain(shown);
+}
+
+test("QR code TOTP secret, filled from an otpauth link", async ({ person }) => {
+	// RFC 6238 appendix B SHA1, last 6 digits
+	expect(totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 59, "sha1")).toBe("287082");
+
+	const secret = "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ";
+	const account = "alice@example.com";
+	const sender = await person();
+	const { link, key } = await create_note(sender, async (page) => {
+		await page.locator("#input_qr_checkbox").check();
+		await expect(page.locator("#input_qr > legend > .switch .selected")).toHaveText("TOTP");
+		await page.locator("#input_qr_totp_secret").fill(`otpauth://totp/ACME%20Co:${encodeURIComponent(account)}?secret=${secret.toLowerCase()}&issuer=ACME%20Co`);
+		await expect(page.locator("#input_qr_totp_secret")).toHaveValue(secret);
+		await expect(page.locator("#input_qr_totp_issuer")).toHaveValue("ACME Co");
+		await expect(page.locator("#input_qr_totp_account")).toHaveValue(account);
+		await expect(page.locator("#input_qr_preview img")).toBeVisible();
+		await expect_totp_code(page.locator("#input_qr_totp_code .totp-code"), secret);
+	});
+
+	const reader = await person();
+	await read_note(reader, link);
+	const details = reader.page.locator("#read_qr_totp");
+	await expect(details).toContainText("ACME Co");
+	await expect(details).toContainText(account);
+	await expect(details.locator(".pwd-row").last()).toHaveText(secret);
+	await expect_totp_code(details.locator(".totp-code"), secret);
+	await expect(reader.page.locator("#read_qr .qrcode img")).toBeVisible();
+	// Only the QR code section
+	await expect(reader.page.locator("#read_note")).toHaveCount(0);
+	await expect_never_sent([sender, reader], [key, secret, account]);
+});
+
+test("QR code Wi-Fi network", async ({ person }) => {
+	const ssid = "Office;Net";
+	const password = "p@ss:word\\";
+	const sender = await person();
+	const { link, key } = await create_note(sender, async (page) => {
+		await page.locator("#input_qr_checkbox").check();
+		await page.locator("#input_qr > legend > .switch").getByRole("button", { name: "Wi-Fi" }).click();
+		await page.locator("#input_qr_wifi_ssid").fill(ssid);
+		// A WPA network needs its password
+		await expect(page.locator("#input_createbtn")).toBeDisabled();
+		await page.locator("#input_qr_wifi_password").fill(password);
+		await expect(page.locator("#input_qr_preview img")).toBeVisible();
+	});
+
+	const reader = await person();
+	await read_note(reader, link);
+	const rows = reader.page.locator("#read_qr_wifi .pwd-row");
+	await expect(rows.first()).toHaveText(ssid);
+	await expect(rows.last()).toHaveText(password);
+	await expect(reader.page.locator("#read_qr_wifi")).toContainText("WPA");
+	await expect_never_sent([sender, reader], [key, ssid, password]);
+});
+
+test("QR code text", async ({ person }) => {
+	const payload = "bitcoin:bc1qsecretaddress?amount=0.1";
+	const sender = await person();
+	const { link, key } = await create_note(sender, async (page) => {
+		await page.locator("#input_qr_checkbox").check();
+		await page.locator("#input_qr > legend > .switch").getByRole("button", { name: "Text" }).click();
+		await page.locator("#input_qr_text").fill(payload);
+	});
+
+	const reader = await person();
+	await read_note(reader, link);
+	await expect(reader.page.locator("#read_qr_text")).toHaveValue(payload);
+	await expect(reader.page.locator("#read_qr .qrcode img")).toBeVisible();
+	await expect_never_sent([sender, reader], [key, payload]);
+});
+
+test("an invalid QR code prevents creating the note", async ({ person }) => {
+	const { page } = await person();
+	await page.goto("/");
+	await page.locator("#input_note").fill("with a QR code");
+	const create = page.locator("#input_createbtn");
+	await expect(create).toBeEnabled();
+
+	// Checked but untouched: incomplete, without an error message
+	await page.locator("#input_qr_checkbox").check();
+	await expect(create).toBeDisabled();
+	await expect(page.locator("#input_qr_error")).toHaveCount(0);
+
+	const secret = page.locator("#input_qr_totp_secret");
+	await secret.fill("not base32!");
+	await expect(page.locator("#input_qr_error")).toContainText("Invalid secret");
+	await secret.fill("otpauth://hotp/ACME?secret=JBSWY3DPEHPK3PXP&counter=1");
+	await expect(page.locator("#input_qr_error")).toContainText("Only TOTP");
+	await expect(create).toBeDisabled();
+
+	await secret.fill("JBSW Y3DP EHPK 3PXP");
+	await expect(page.locator("#input_qr_error")).toHaveCount(0);
+	await expect(create).toBeEnabled();
+
+	await page.locator("#input_qr > legend > .switch").getByRole("button", { name: "Text" }).click();
+	await page.locator("#input_qr_text").fill("x".repeat(3000));
+	await expect(page.locator("#input_qr_error")).toHaveText("Too long for a QR code");
+	await expect(create).toBeDisabled();
+
+	// Unchecked: the note is created without it
+	await page.locator("#input_qr_checkbox").uncheck();
+	await expect(create).toBeEnabled();
 });
 
 test("copy buttons",async ({ person }) => {

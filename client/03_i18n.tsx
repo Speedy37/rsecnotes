@@ -261,6 +261,126 @@ const i18n = {
 		en: "Generate a new password",
 		fr: "Générer un nouveau mot de passe",
 	},
+	QR_code: {
+		en: "QR code",
+		fr: "QR code",
+	},
+	QR_code_desc: {
+		en: "Share a 2FA secret, a Wi-Fi network or any QR code content",
+		fr: "Partager un secret 2FA, un réseau Wi-Fi ou le contenu de n'importe quel QR code",
+	},
+	qr_mode_totp: {
+		en: "TOTP",
+		fr: "TOTP",
+	},
+	qr_mode_wifi: {
+		en: "Wi-Fi",
+		fr: "Wi-Fi",
+	},
+	qr_mode_text: {
+		en: "Text",
+		fr: "Texte",
+	},
+	qr_secret: {
+		en: "Secret",
+		fr: "Secret",
+	},
+	qr_secret_placeholder: {
+		en: "Base32 secret, or paste an otpauth:// link",
+		fr: "Secret en base32, ou collez un lien otpauth://",
+	},
+	qr_issuer: {
+		en: "Issuer",
+		fr: "Émetteur",
+	},
+	qr_account: {
+		en: "Account",
+		fr: "Compte",
+	},
+	qr_algorithm: {
+		en: "Algorithm",
+		fr: "Algorithme",
+	},
+	qr_digits: {
+		en: "Digits",
+		fr: "Chiffres",
+	},
+	qr_period: {
+		en: "Period (seconds)",
+		fr: "Période (secondes)",
+	},
+	qr_code: {
+		en: "Current code",
+		fr: "Code actuel",
+	},
+	qr_ssid: {
+		en: "Network name",
+		fr: "Nom du réseau",
+	},
+	qr_password: {
+		en: "Password",
+		fr: "Mot de passe",
+	},
+	qr_security: {
+		en: "Security",
+		fr: "Sécurité",
+	},
+	qr_security_none: {
+		en: "None",
+		fr: "Aucune",
+	},
+	qr_hidden: {
+		en: "Hidden network",
+		fr: "Réseau masqué",
+	},
+	qr_yes: {
+		en: "Yes",
+		fr: "Oui",
+	},
+	qr_text_placeholder: {
+		en: "Content of the QR code...",
+		fr: "Contenu du QR code...",
+	},
+	qr_scan: {
+		en: "Scan it with your phone, eg. with your authenticator app for a TOTP secret",
+		fr: "Scannez-le avec votre téléphone, par exemple avec votre application d'authentification pour un secret TOTP",
+	},
+	qr_totp_warning: {
+		en: "Whoever reads this note can generate the codes of this account forever: prefer a single view. The recipient will be asked to keep the secret and the password on separate devices.",
+		fr: "Quiconque lit cette note pourra générer les codes de ce compte indéfiniment : préférez une seule vue. Il sera demandé au destinataire de garder le secret et le mot de passe sur des appareils séparés.",
+	},
+	qr_totp_scan: {
+		en: "Scan it with the authenticator app of one device, and keep the password on another one (eg. in the password manager of your computer): a single stolen device then does not give both.",
+		fr: "Scannez-le avec l'application d'authentification d'un appareil, et gardez le mot de passe sur un autre (par exemple dans le gestionnaire de mots de passe de votre ordinateur) : un seul appareil volé ne donne alors pas les deux.",
+	},
+	qr_err_required: {
+		en: "Required",
+		fr: "Requis",
+	},
+	qr_err_secret: {
+		en: "Invalid secret: base32 expected (letters A-Z, digits 2-7)",
+		fr: "Secret invalide : base32 attendu (lettres A-Z, chiffres 2-7)",
+	},
+	qr_err_hotp: {
+		en: "Only TOTP (time based) codes are supported",
+		fr: "Seuls les codes TOTP (basés sur le temps) sont pris en charge",
+	},
+	qr_err_algorithm: {
+		en: "Unsupported algorithm",
+		fr: "Algorithme non pris en charge",
+	},
+	qr_err_digits: {
+		en: "Digits must be 6, 7 or 8",
+		fr: "Le nombre de chiffres doit être 6, 7 ou 8",
+	},
+	qr_err_period: {
+		en: "Invalid period",
+		fr: "Période invalide",
+	},
+	qr_err_too_long: {
+		en: "Too long for a QR code",
+		fr: "Trop long pour un QR code",
+	},
 	ShareSettings: {
 		en: "Share settings",
 		fr: "Paramètres de partage",

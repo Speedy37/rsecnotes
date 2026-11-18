@@ -10,7 +10,8 @@ Share notes, files and credentials through a link. They are encrypted in your br
 
 - Notes are encrypted and decrypted by the browser with AES-256-GCM (Web Crypto API), the key is in the link fragment and never reaches the server
 - Share link with QR code, drag & drop files, light and dark themes, optional logo
-- A note can contain a text, credentials (a generated or typed password) and multiple files
+- A note can contain a text, credentials (a generated or typed password), a QR code and multiple files
+- QR codes for TOTP secrets (pasted `otpauth://` links, live codes), Wi-Fi networks, or any text, shown to the reader ready to scan
 - Notes are destroyed after a number of views and/or a duration
 - Notes are padded before encryption, so the server only knows their approximate size
 - Notes are stored in memory, or on disk encrypted again with a key only kept in memory, and the oldest notes are dropped when space is needed
@@ -102,6 +103,8 @@ decrypted_data =
     PWD: [u8; PWD_LEN]
     FILES_LEN: u32le
     FILES: [FILE; FILES_LEN]
+    QR_LEN: u32le
+    QR: [u8; QR_LEN]
     PADDING: [0u8; _]
 FILE =
     NAME_LEN: u32le
@@ -110,7 +113,7 @@ FILE =
     DATA: [u8; SIZE]
 ```
 
-Strings are UTF-8. The padding is zeros up to 128 bytes, then the next power of two up to 1024 bytes, then [Padmé](https://lbarman.ch/blog/padme/) (at most ~12% overhead), reduced if needed to fit the server maximum note size.
+Strings are UTF-8. `QR` is the QR code payload, eg. an `otpauth://totp/` link or a `WIFI:` network. It was added after the files: in older notes it is read from the zero padding (empty), or missing when less than 4 bytes are left. The padding is zeros up to 128 bytes, then the next power of two up to 1024 bytes, then [Padmé](https://lbarman.ch/blog/padme/) (at most ~12% overhead), reduced if needed to fit the server maximum note size.
 
 ### Server storage
 

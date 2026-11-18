@@ -151,6 +151,16 @@ function render_note(raw_note: EncryptedNote, note: DecryptedNote) {
 			</fieldset>,
 		);
 	}
+	if (note.qr) {
+		note_block.append(
+			<fieldset>
+				<legend>
+					<label>{tr(i18n.QR_code)}</label>
+				</legend>
+				{render_qr_view(note.qr)}
+			</fieldset>,
+		);
+	}
 
 	read_block.append(note_block, read_settings_status = <p id="read_settings_status" />);
 
@@ -239,7 +249,7 @@ function render_new_note() {
 			return;
 		}
 		const doesnt_fit = server_config.max_note_size > 0 && pkg.total_len > server_config.max_note_size;
-		input_createbtn.disabled = doesnt_fit || (totp_required() && !/^[0-9]{6}$/.test(input_totp.value));
+		input_createbtn.disabled = doesnt_fit || input_qr_invalid || (totp_required() && !/^[0-9]{6}$/.test(input_totp.value));
 		const total_len_h = humanSize(pkg.total_len);
 		const max_note_size_h = server_config.max_note_size > 0 ? humanSize(server_config.max_note_size) : "♾️";
 		input_status.textContent = `Note size: ${total_len_h} / ${max_note_size_h}.`;
@@ -405,6 +415,50 @@ function render_new_note() {
 			set_pwd("");
 		}
 	}
+
+	/// The QR code forms are kept while switching between them, the selected one gives the payload
+	let input_qr_checkbox: HTMLInputElement;
+	let input_qr_switch: HTMLDivElement;
+	let input_qr_preview: HTMLDivElement;
+	/// Checked with an incomplete or invalid form: the note is not created without its QR code
+	let input_qr_invalid = false;
+	const input_qr_forms = {
+		totp: render_qr_totp_form(render_qr_preview),
+		wifi: render_qr_wifi_form(render_qr_preview),
+		text: render_qr_text_form(render_qr_preview),
+	};
+	let input_qr_mode: keyof typeof input_qr_forms = "totp";
+	function render_qr_preview() {
+		const enabled = input_qr_checkbox.checked;
+		for (const [mode, form] of Object.entries(input_qr_forms))
+			form.el.hidden = !enabled || mode !== input_qr_mode;
+		input_qr_switch.hidden = input_qr_preview.hidden = !enabled;
+		let payload = "";
+		let error: string | null = null;
+		let preview: HTMLElement | string = "";
+		if (enabled) {
+			const state = input_qr_forms[input_qr_mode].state();
+			error = state.error;
+			if (error === null) {
+				payload = state.payload;
+				try {
+					preview = render_qrcode(payload);
+				} catch {
+					error = tr(i18n.qr_err_too_long);
+				}
+			}
+			// An untouched form is incomplete, without nagging about it
+			if (error !== null && !state.empty) preview = <div id="input_qr_error" className="error">{error}</div>;
+		}
+		input_qr_preview.replaceChildren(preview);
+		input_qr_invalid = error !== null;
+		pkg.qr = error === null ? payload : "";
+		renderNoteStatus();
+	}
+	function set_qr_mode(mode: keyof typeof input_qr_forms) {
+		input_qr_mode = mode;
+		render_qr_preview();
+	}
 	swap_main(
 		<div id="input_block">
 			<fieldset className="box">
@@ -491,6 +545,24 @@ function render_new_note() {
 					</div>}
 				</legend>
 			</fieldset>}
+			<fieldset id="input_qr">
+				<legend>
+					{input_qr_checkbox = <input id="input_qr_checkbox" type="checkbox" onchange={render_qr_preview} />}
+					<label htmlFor="input_qr_checkbox">
+						{tr(i18n.QR_code)}
+						<span>{tr(i18n.QR_code_desc)}</span>
+					</label>
+					{input_qr_switch = render_switch([
+						{ value: "totp", label: tr(i18n.qr_mode_totp) },
+						{ value: "wifi", label: tr(i18n.qr_mode_wifi) },
+						{ value: "text", label: tr(i18n.qr_mode_text) },
+					], input_qr_mode, set_qr_mode).el}
+				</legend>
+				{input_qr_forms.totp.el}
+				{input_qr_forms.wifi.el}
+				{input_qr_forms.text.el}
+				{input_qr_preview = <div id="input_qr_preview" />}
+			</fieldset>
 			</fieldset>
 
 			<fieldset className="box" id="input_settings">
@@ -553,7 +625,231 @@ function render_new_note() {
 			{(input_settings_status = <div id="input_settings_status"></div>)}
 		</div>
 	);
+	render_qr_preview();
 	render_settings();
+}
+
+/// Segmented switch, a <select> creation reports an inline style CSP violation in WebKit
+function render_switch<T extends string>(options: { value: T; label: string }[], value: T, onchange: (value: T) => void) {
+	const btns = options.map((opt) => <button value={opt.value}
+		onclick={() => {
+			set(opt.value);
+			onchange(opt.value);
+		}}>{opt.label}</button>);
+	const set = (value: T) => {
+		for (const btn of btns) btn.classList.toggle("selected", btn.value === value);
+	};
+	set(value);
+	return { el: <div className="switch" hidden>{...btns}</div>, set };
+}
+
+/// QR code of a note payload, M error correction: more capacity than the H of the share link
+function render_qrcode(payload: string): HTMLDivElement {
+	const div: HTMLDivElement = <div className="qrcode" />;
+	new QRCode(div, {
+		text: payload,
+		width: 512,
+		height: 512,
+		colorDark: "#000000",
+		colorLight: "#ffffff",
+		correctLevel: QRCode.CorrectLevel.M,
+	});
+	// The library shows the payload as a tooltip, here a secret
+	div.removeAttribute("title");
+	return div;
+}
+
+/// Current code, the seconds it remains valid, and its copy button, refreshed until removed from the page
+function render_totp_live(totp: Totp) {
+	let code = "";
+	// Zero width space keeps the line height until the code is computed
+	const code_el: HTMLSpanElement = <span className="totp-code">{"​"}</span>;
+	const remaining_el: HTMLSpanElement = <span className="totp-remaining" />;
+	const row: HTMLDivElement = <div className="pwd-row">
+		<div className="pwd">{code_el}{remaining_el}</div>
+		{render_copy(() => code)}
+	</div>;
+	let shown = false;
+	const tick = async () => {
+		if (row.isConnected) shown = true;
+		else if (shown) return;
+		const now = Date.now();
+		const r = await totpCode(totp, now / 1000);
+		code = r.code;
+		// Grouped for reading, copied without the space
+		const half = Math.floor(code.length / 2);
+		code_el.textContent = `${code.substring(0, half)} ${code.substring(half)}`;
+		remaining_el.textContent = `${Math.ceil(r.remaining)} s`;
+		setTimeout(tick, 1000 - (now % 1000) + 20);
+	};
+	tick();
+	return row;
+}
+
+function render_qr_field(label: string, value: HTMLElement, id?: string) {
+	return [<label htmlFor={id ?? ""}>{label}</label>, value];
+}
+
+function render_qr_input(id: string, oninput: () => void, placeholder = "") {
+	return <input id={id} type="text" autocomplete="off" spellcheck={false} placeholder={placeholder} oninput={oninput} />;
+}
+
+type QrForm = { el: HTMLElement; state: () => { payload: string; error: string | null; empty: boolean } };
+
+function render_qr_totp_form(onchange: () => void): QrForm {
+	const totp: Totp = { secret: "", issuer: "", account: "", ...TOTP_DEFAULTS };
+	let error: string | null = null;
+	const update = () => {
+		error = null;
+		const parsed = parseOtpauth(secret.value);
+		if (typeof parsed === "string") {
+			error = parsed;
+		} else if (parsed) {
+			// A pasted link fills the whole form
+			Object.assign(totp, parsed);
+			secret.value = totp.secret;
+			issuer.value = totp.issuer;
+			account.value = totp.account;
+			period.value = totp.period.toString();
+			algorithm.set(totp.algorithm);
+			digits.set(totp.digits.toString());
+		} else {
+			totp.secret = normalizeBase32(secret.value);
+		}
+		totp.issuer = issuer.value.trim();
+		totp.account = account.value.trim();
+		totp.period = Math.floor(+period.value);
+		error ??= totp.secret ? totpError(totp) : tr(i18n.qr_err_required);
+		code_slot.replaceChildren(error === null ? render_totp_live({ ...totp }) : "");
+		onchange();
+	};
+	const secret = render_qr_input("input_qr_totp_secret", update, tr(i18n.qr_secret_placeholder));
+	const issuer = render_qr_input("input_qr_totp_issuer", update);
+	const account = render_qr_input("input_qr_totp_account", update);
+	const period: HTMLInputElement = <input id="input_qr_totp_period" type="number" min="1" value={totp.period.toString()}
+		autocomplete="off" oninput={update} />;
+	const algorithm = render_switch(TOTP_ALGORITHMS.map((a) => ({ value: a, label: a })), totp.algorithm, (a) => {
+		totp.algorithm = a;
+		update();
+	});
+	const digits = render_switch(["6", "7", "8"].map((d) => ({ value: d, label: d })), totp.digits.toString(), (d) => {
+		totp.digits = +d;
+		update();
+	});
+	algorithm.el.hidden = digits.el.hidden = false;
+	const code_slot: HTMLDivElement = <div id="input_qr_totp_code" />;
+	const el = <div className="qr-form" id="input_qr_totp" hidden>
+		{...render_qr_field(tr(i18n.qr_secret), secret, secret.id)}
+		{...render_qr_field(tr(i18n.qr_issuer), issuer, issuer.id)}
+		{...render_qr_field(tr(i18n.qr_account), account, account.id)}
+		{...render_qr_field(tr(i18n.qr_algorithm), algorithm.el)}
+		{...render_qr_field(tr(i18n.qr_digits), digits.el)}
+		{...render_qr_field(tr(i18n.qr_period), period, period.id)}
+		{...render_qr_field(tr(i18n.qr_code), code_slot)}
+		<p className="qr-warning">{tr(i18n.qr_totp_warning)}</p>
+	</div>;
+	error = tr(i18n.qr_err_required);
+	return {
+		el,
+		state: () => ({ payload: error === null ? buildOtpauth(totp) : "", error, empty: secret.value.trim() === "" }),
+	};
+}
+
+function render_qr_wifi_form(onchange: () => void): QrForm {
+	const wifi: Wifi = { ssid: "", password: "", security: "WPA", hidden: false };
+	const update = () => {
+		wifi.ssid = ssid.value;
+		wifi.password = password.value;
+		wifi.hidden = hidden.checked;
+		password.disabled = wifi.security === "nopass";
+		onchange();
+	};
+	const ssid = render_qr_input("input_qr_wifi_ssid", update);
+	const password = render_qr_input("input_qr_wifi_password", update);
+	const hidden: HTMLInputElement = <input id="input_qr_wifi_hidden" type="checkbox" onchange={update} />;
+	const security = render_switch(WIFI_SECURITIES.map((s) => ({
+		value: s,
+		label: s === "nopass" ? tr(i18n.qr_security_none) : s,
+	})), wifi.security, (s) => {
+		wifi.security = s;
+		update();
+	});
+	security.el.hidden = false;
+	const el = <div className="qr-form" id="input_qr_wifi" hidden>
+		{...render_qr_field(tr(i18n.qr_ssid), ssid, ssid.id)}
+		{...render_qr_field(tr(i18n.qr_security), security.el)}
+		{...render_qr_field(tr(i18n.qr_password), password, password.id)}
+		{...render_qr_field(tr(i18n.qr_hidden), <div>{hidden}</div>, hidden.id)}
+	</div>;
+	return {
+		el,
+		state: () => {
+			const error = wifi.ssid === "" ? tr(i18n.qr_err_required)
+				: wifi.security !== "nopass" && wifi.password === "" ? tr(i18n.qr_err_required) : null;
+			return { payload: error === null ? buildWifi(wifi) : "", error, empty: wifi.ssid === "" && wifi.password === "" };
+		},
+	};
+}
+
+function render_qr_text_form(onchange: () => void): QrForm {
+	const text: HTMLTextAreaElement = <textarea id="input_qr_text" placeholder={tr(i18n.qr_text_placeholder)}
+		autocomplete="off" spellcheck={false} oninput={onchange} />;
+	const el = <div className="qr-form" id="input_qr_text_block" hidden>{text}</div>;
+	return {
+		el,
+		state: () => ({ payload: text.value, error: text.value === "" ? tr(i18n.qr_err_required) : null, empty: text.value === "" }),
+	};
+}
+
+/// A TOTP secret or a Wi-Fi network show their details, any other payload its text, all of them their QR code
+function render_qr_view(payload: string): HTMLElement {
+	const fields: HTMLElement[] = [];
+	const field = (label: string, value: HTMLElement) => fields.push(<span className="qr-label">{label}</span>, value);
+	const value_row = (value: string, pwd = false) => {
+		const view: (HTMLElement | string)[] = pwd ? render_pwd_view(value) : [value];
+		return <div className="pwd-row">
+			<div className="pwd">{...view}</div>
+			{render_copy(() => value)}
+		</div>;
+	};
+	const plain = (value: string) => <div className="qr-value">{value}</div>;
+	const totp = parseOtpauth(payload);
+	const wifi = parseWifi(payload);
+	let details: HTMLElement;
+	let scan = tr(i18n.qr_scan);
+	if (totp !== null && typeof totp !== "string") {
+		scan = tr(i18n.qr_totp_scan);
+		if (totp.issuer) field(tr(i18n.qr_issuer), plain(totp.issuer));
+		if (totp.account) field(tr(i18n.qr_account), plain(totp.account));
+		field(tr(i18n.qr_code), render_totp_live(totp));
+		field(tr(i18n.qr_secret), value_row(totp.secret));
+		if (totp.algorithm !== TOTP_DEFAULTS.algorithm) field(tr(i18n.qr_algorithm), plain(totp.algorithm));
+		if (totp.digits !== TOTP_DEFAULTS.digits) field(tr(i18n.qr_digits), plain(totp.digits.toString()));
+		if (totp.period !== TOTP_DEFAULTS.period) field(tr(i18n.qr_period), plain(totp.period.toString()));
+		details = <div className="qr-fields" id="read_qr_totp">{...fields}</div>;
+	} else if (wifi !== null) {
+		field(tr(i18n.qr_ssid), value_row(wifi.ssid));
+		field(tr(i18n.qr_security), plain(wifi.security === "nopass" ? tr(i18n.qr_security_none) : wifi.security));
+		if (wifi.security !== "nopass") field(tr(i18n.qr_password), value_row(wifi.password, true));
+		if (wifi.hidden) field(tr(i18n.qr_hidden), plain(tr(i18n.qr_yes)));
+		details = <div className="qr-fields" id="read_qr_wifi">{...fields}</div>;
+	} else {
+		details = <div className="text-copy">
+			<textarea id="read_qr_text" value={payload} readOnly />
+			{render_copy(() => payload)}
+		</div>;
+	}
+	let qrcode: HTMLElement;
+	try {
+		qrcode = render_qrcode(payload);
+	} catch {
+		qrcode = <div className="error">{tr(i18n.qr_err_too_long)}</div>;
+	}
+	return <div id="read_qr">
+		{details}
+		{qrcode}
+		<p className="qr-scan">{scan}</p>
+	</div>;
 }
 
 

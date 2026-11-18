@@ -23,7 +23,7 @@ async function _importAesGcmKey(rawKey: Uint8Array<ArrayBuffer>): Promise<Crypto
 /// Data is followed by zeros up to the padded length, to hide the content length from the server
 const _VERSION_1 = 1;
 const _V1_HEADER_LEN = 1 /* version */ + 12; /* iv*/
-const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4 /* pwd len */ + 4; /* files len */
+const _V1_DATA_HEADER_LEN = 4 /* text len */ + 4 /* pwd len */ + 4 /* files len */ + 4; /* qr len */
 const _V1_FILE_HEADER_LEN = 4 /* name len */ + 8; /* file len */
 const _GCM_TAG_LEN = 16;
 /// Small notes (eg. only a password) are all padded to this length
@@ -52,6 +52,8 @@ class Pkg {
 	private _files: { file: File; name_len: number }[] = [];
 	private _text_len: number | null = null;
 	private _pwd_len: number | null = null;
+	private _qr: string = "";
+	private _qr_len: number | null = null;
 	private _file_len: number = 0;
 
 	constructor() {}
@@ -98,11 +100,24 @@ class Pkg {
 		return this._pwd_len;
 	}
 
+	/// QR code payload, eg. an otpauth:// link or a WIFI: network
+	get qr(): string {
+		return this._qr;
+	}
+	set qr(qr: string) {
+		this._qr = qr;
+		this._qr_len = null;
+	}
+	get qr_len(): number {
+		if (this._qr_len === null) this._qr_len = _utf8_len(this._qr);
+		return this._qr_len;
+	}
+
 	/// Maximum final size of a note, 0 for no limits, padding is reduced to stay below it
 	max_total_len: number = 0;
 
 	private get data_len(): number {
-		return _V1_DATA_HEADER_LEN + this.text_len + this.pwd_len + this._file_len;
+		return _V1_DATA_HEADER_LEN + this.text_len + this.pwd_len + this._file_len + this.qr_len;
 	}
 
 	private get padded_data_len(): number {
@@ -119,7 +134,7 @@ class Pkg {
 	}
 
 	get empty(): boolean {
-		return this._text.length === 0 && this._pwd.length === 0 && this._files.length === 0;
+		return this._text.length === 0 && this._pwd.length === 0 && this._files.length === 0 && this._qr.length === 0;
 	}
 
 	async encode(): Promise<Uint8Array<ArrayBuffer>> {
@@ -161,6 +176,8 @@ class Pkg {
 				pos += value.byteLength;
 			}
 		}
+		write_u32le(this.qr_len);
+		write_utf8(this._qr);
 		if (pos != this.data_len)
 			throw new Error(`ASSERT(${pos} == ${this.data_len}) failed`);
 
@@ -192,6 +209,7 @@ type DecryptedNote = {
 	text: string;
 	pwd: string;
 	files: { name: string; data: Uint8Array<ArrayBuffer> }[];
+	qr: string;
 };
 async function decrypt(keyb64: string, buffer: ArrayBuffer): Promise<DecryptedNote> {
 	const data_u8 = new Uint8Array(buffer);
@@ -266,7 +284,9 @@ async function _decodev1(buffer: ArrayBuffer) {
 		const file_data = data_u8.subarray(start, pos);
 		files.push({ name: file_name, data: file_data });
 	}
+	// Added after the files: in older notes, it is either missing or read from the zero padding (empty)
+	const qr = data_u8.byteLength - pos >= 4 ? read_utf8(read_u32le()) : "";
 	if (data_u8.subarray(pos).some((b) => b !== 0)) throw new Error(`invalid padding after ${pos}`);
 
-	return { text, pwd, files };
+	return { text, pwd, files, qr };
 }
