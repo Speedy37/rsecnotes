@@ -188,17 +188,18 @@ impl Database {
 
     /// File store of the slot a note of `data_len` bytes would go to, None if stored in memory
     pub fn file_store(&mut self, data_len: usize) -> Result<Option<Arc<FileStore>>, &'static str> {
-        let note_memory_usage = note_memory_usage(data_len);
-        let (_slot_idx, slot) =
-            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or("note too big")?;
+        let (_slot_idx, slot) = Self::slot_mut(&mut self.slots, data_len).ok_or("note too big")?;
         Ok(slot.file_store.clone())
     }
 
+    /// Slot by the note size alone, as checked against `max_note_size` before receiving it:
+    /// the bookkeeping overhead only counts in the slot memory usage
     fn slot_mut(
         slots: &mut [DatabaseSlot],
-        note_memory_usage: Size,
+        data_len: usize,
     ) -> Option<(DatabaseSlotIdx, &mut DatabaseSlot)> {
-        match slots.binary_search_by_key(&note_memory_usage, |slot| slot.stats.max_note_size) {
+        let size = Size { bytes: data_len };
+        match slots.binary_search_by_key(&size, |slot| slot.stats.max_note_size) {
             Ok(index) | Err(index) => slots
                 .get_mut(index)
                 .map(|slot| (DatabaseSlotIdx(index), slot)),
@@ -211,7 +212,7 @@ impl Database {
 
         let note_memory_usage = content.note_memory_usage();
         let (slot_idx, slot) =
-            Self::slot_mut(&mut self.slots, note_memory_usage).ok_or("note too big")?;
+            Self::slot_mut(&mut self.slots, content.data.len()).ok_or("note too big")?;
 
         let note_id = loop {
             let id = NoteId::generate();
@@ -436,5 +437,43 @@ impl Database {
         }())
         .expect("write! to String to not fail");
         println!("{log}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slot(max_note_size: usize, max_memory_usage: usize) -> ConfigFileSlot {
+        ConfigFileSlot {
+            max_note_size: Size {
+                bytes: max_note_size,
+            },
+            max_memory_usage: Size {
+                bytes: max_memory_usage,
+            },
+            directory: None,
+        }
+    }
+
+    fn note(len: usize) -> NoteContent {
+        NoteContent {
+            data: NoteData::Memory(Bytes::from(vec![0u8; len])),
+            expires_after: 0,
+            remaining_views: 1,
+        }
+    }
+
+    #[test]
+    fn notes_up_to_max_note_size_fit_their_slot() {
+        let mut db = Database::new(&[slot(100, 10_000), slot(1000, 10_000)]).unwrap();
+        // The client pads notes up to exactly max_note_size, the bookkeeping overhead is not part of it
+        for (len, slot_idx) in [(100, 0), (101, 1), (1000, 1)] {
+            assert!(db.file_store(len).is_ok(), "len {len}");
+            let id = db.add_note(note(len)).unwrap();
+            assert_eq!(db.inner.notes_by_id[&id].0.0, slot_idx, "len {len}");
+        }
+        assert!(db.file_store(1001).is_err());
+        assert!(db.add_note(note(1001)).is_err());
     }
 }
